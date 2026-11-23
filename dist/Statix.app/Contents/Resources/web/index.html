@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Statix</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo-box">
+          <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="4" y="4" width="16" height="16" rx="4" />
+            <path d="M4 12h3l2-4 4 8 3-4h4" />
+          </svg>
+          <span class="live-indicator"></span>
+        </div>
+        <div class="brand-text">
+          <div class="app-name">STATIX</div>
+          <div class="sys-chip" id="sysChip">Yükleniyor...</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="btnSettings" title="Ayarlar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+        <button class="icon-btn" id="btnActivityMonitor" title="Activity Monitor'ı Başlat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+        </button>
+        <button class="icon-btn icon-btn-danger" id="btnQuit" title="Çıkış">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+            <line x1="12" y1="2" x2="12" y2="12" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Quick Settings Drawer (hidden by default) -->
+    <div class="settings-drawer" id="settingsDrawer">
+      <div class="settings-title">Hızlı Tercihler</div>
+      
+      <div class="setting-row">
+        <label>Menü Çubuğu Görünümü:</label>
+        <select id="selectMode">
+          <option value="cpu">İkon + CPU %</option>
+          <option value="cpu_ram">İkon + CPU & RAM %</option>
+          <option value="net">İkon + Ağ Hızı</option>
+          <option value="icon">Sadece İkon</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <label>Yenileme Sıklığı:</label>
+        <div class="segmented-control" id="intervalControl">
+          <button data-interval="1.0">1s</button>
+          <button data-interval="1.5" class="active">1.5s</button>
+          <button data-interval="3.0">3s</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Scrollable Dashboard -->
+    <div class="dashboard-content">
+      
+      <!-- CPU Card -->
+      <section class="card card-cpu">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="dot-accent cyan"></span>
+            <span>İŞLEMCİ (CPU)</span>
+          </div>
+          <div class="card-value-large cyan" id="cpuTotalPercent">0%</div>
+        </div>
+
+        <div class="progress-bar-wrap">
+          <div class="progress-bar cyan-bar" id="cpuProgressBar" style="width: 0%"></div>
+        </div>
+
+        <!-- Breakdown pills -->
+        <div class="sub-stats-row">
+          <div class="sub-stat">
+            <span class="sub-label">Kullanıcı:</span>
+            <span class="sub-val" id="cpuUserPercent">0%</span>
+          </div>
+          <div class="sub-stat">
+            <span class="sub-label">Sistem:</span>
+            <span class="sub-val" id="cpuSystemPercent">0%</span>
+          </div>
+          <div class="sub-stat">
+            <span class="sub-label">Boşta:</span>
+            <span class="sub-val" id="cpuIdlePercent">100%</span>
+          </div>
+        </div>
+
+        <!-- Sparkline Canvas -->
+        <div class="canvas-wrap">
+          <canvas id="cpuSparkline" width="340" height="42"></canvas>
+        </div>
+
+        <!-- Cores Grid -->
+        <div class="cores-container" id="coresContainer">
+          <!-- Filled dynamically with mini core meters -->
+        </div>
+      </section>
+
+      <!-- RAM / Memory Card -->
+      <section class="card card-ram">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="dot-accent emerald"></span>
+            <span>BELLEK (RAM)</span>
+          </div>
+          <div class="card-value-large emerald" id="ramPercentText">0%</div>
+        </div>
+
+        <!-- Multi-segment RAM Bar -->
+        <div class="multi-progress-bar">
+          <div class="segment seg-wired" id="ramSegWired" title="Kablolu" style="width: 0%"></div>
+          <div class="segment seg-active" id="ramSegActive" title="Aktif" style="width: 0%"></div>
+          <div class="segment seg-compressed" id="ramSegCompressed" title="Sıkıştırılmış" style="width: 0%"></div>
+          <div class="segment seg-free" id="ramSegFree" title="Boş" style="width: 100%"></div>
+        </div>
+
+        <div class="sub-stats-row">
+          <div class="sub-stat">
+            <span class="sub-label">Kullanılan:</span>
+            <span class="sub-val" id="ramUsedVal">0 GB</span>
+          </div>
+          <div class="sub-stat">
+            <span class="sub-label">Toplam:</span>
+            <span class="sub-val" id="ramTotalVal">0 GB</span>
+          </div>
+          <div class="sub-stat">
+            <span class="sub-label">Baskı:</span>
+            <span class="badge" id="ramPressureBadge">Normal</span>
+          </div>
+        </div>
+
+        <div class="ram-legend">
+          <span><i class="dot seg-wired-bg"></i> Kablolu</span>
+          <span><i class="dot seg-active-bg"></i> Aktif</span>
+          <span><i class="dot seg-compressed-bg"></i> Sıkıştırılmış</span>
+          <span><i class="dot seg-free-bg"></i> Boş</span>
+          <span class="swap-pill" id="swapPill">Swap: 0 MB</span>
+        </div>
+      </section>
+
+      <!-- Disk & Network Grid -->
+      <div class="grid-2col">
+        <!-- Disk Card -->
+        <section class="card card-compact">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="dot-accent amber"></span>
+              <span>DEPOLAMA</span>
+            </div>
+            <div class="card-value-medium amber" id="diskPercent">0%</div>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar amber-bar" id="diskProgressBar" style="width: 0%"></div>
+          </div>
+          <div class="compact-info">
+            <span id="diskFreeText">0 GB Boş</span>
+            <span class="dim" id="diskTotalText">/ 0 GB</span>
+          </div>
+        </section>
+
+        <!-- Network Speeds Card -->
+        <section class="card card-compact">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="dot-accent violet"></span>
+              <span>AĞ TRAFİĞİ</span>
+            </div>
+          </div>
+          <div class="net-speeds">
+            <div class="net-item">
+              <span class="net-arrow down">↓</span>
+              <span class="net-val" id="netDownSpeed">0 B/s</span>
+            </div>
+            <div class="net-item">
+              <span class="net-arrow up">↑</span>
+              <span class="net-val" id="netUpSpeed">0 B/s</span>
+            </div>
+          </div>
+          <div class="compact-info">
+            <span class="dim">Oturum:</span>
+            <span id="netTotalText">0 MB</span>
+          </div>
+        </section>
+      </div>
+
+      <!-- Battery / Power (if present) -->
+      <section class="card card-battery" id="batteryCard">
+        <div class="battery-row">
+          <div class="battery-left">
+            <svg class="battery-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="16" height="10" rx="2" />
+              <line x1="20" y1="11" x2="20" y2="13" />
+            </svg>
+            <div class="battery-meta">
+              <span class="battery-title" id="batteryTitle">Pil Seviyesi</span>
+              <span class="battery-sub" id="batterySub">Şarj Ediliyor</span>
+            </div>
+          </div>
+          <div class="battery-val" id="batteryPercent">100%</div>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar green-bar" id="batteryProgressBar" style="width: 100%"></div>
+        </div>
+      </section>
+
+      <!-- Top Processes Section -->
+      <section class="card card-processes">
+        <div class="proc-header">
+          <div class="card-title">
+            <span class="dot-accent cyan"></span>
+            <span>EN ÇOK TÜKETEN SÜREÇLER</span>
+          </div>
+          <div class="proc-tabs">
+            <button class="proc-tab active" id="tabCpu">CPU</button>
+            <button class="proc-tab" id="tabRam">RAM</button>
+          </div>
+        </div>
+
+        <div class="proc-table-wrap">
+          <table class="proc-table">
+            <thead>
+              <tr>
+                <th style="width: 45%">Uygulama / Süreç</th>
+                <th style="width: 20%">PID</th>
+                <th style="width: 35%; text-align: right;" id="procMetricHeader">Kullanım</th>
+              </tr>
+            </thead>
+            <tbody id="procTableBody">
+              <tr>
+                <td colspan="3" class="proc-loading">Süreçler taranıyor...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div class="footer-uptime">
+        <span class="dim">Açık Kalma:</span>
+        <span id="uptimeText">0 saat</span>
+      </div>
+      <div class="footer-arch" id="archBadge">Apple Silicon</div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
