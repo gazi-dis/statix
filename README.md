@@ -1,62 +1,62 @@
 # Statix ⚡
 
-> **macOS Apple Silicon (M1/M2/M3/M4) ve Intel (x86_64)** mimarileriyle %100 uyumlu, ultra hafif (1.3 MB), menü çubuğunda (üst navbar) çalışan modern sistem kaynak ve sıcaklık izleme uygulaması.
+> **macOS Apple Silicon (M1/M2/M3/M4) ve Intel (x86_64)** mimarileriyle %100 uyumlu, ultra hafif (1.4 MB), menü çubuğunda (üst navbar) çalışan modern sistem kaynak, sıcaklık ve network port izleme/yönetim uygulaması.
 
 ![Platform](https://img.shields.io/badge/Platform-macOS%2011.0%2B-blue?style=flat-square&logo=apple)
 ![Architecture](https://img.shields.io/badge/Architecture-Universal%202%20(arm64%20%2B%20x86__64)-success?style=flat-square)
 ![Language](https://img.shields.io/badge/Language-Objective--C%20%2F%20Cocoa%20%2F%20HTML5-orange?style=flat-square)
-![Binary Size](https://img.shields.io/badge/Size-1.3%20MB-purple?style=flat-square)
+![Binary Size](https://img.shields.io/badge/Size-1.4%20MB-purple?style=flat-square)
 ![Package](https://img.shields.io/badge/Package-DMG%20Installer-green?style=flat-square)
 
 ---
 
-## 🎯 Yeni Eklenen Özellikler
+## 🎯 Yeni Eklenen Gelişmiş Özellikler
 
-### 1. 🌡️ İşlemci (CPU) Sıcaklık Takibi
-- **Apple Silicon (M1/M2/M3/M4) Desteği:** Dahili `IOHIDEventSystemClient` ile performans çekirdekleri (`pACC`), verimlilik çekirdekleri (`eACC`) ve `SoC Die` sıcaklıklarını 0.1°C hassasiyetle okur.
-- **Intel (x86_64) Desteği:** `AppleSMC` çekirdek sürücüsü üzerinden `TC0P`, `TC0D`, `TC0E`, `TCXC` anahtarlarıyla doğrudan işlemci paket sıcaklığını okur.
-- **Birim Seçeneği:** Ayarlar ekranından **Celsius (°C)** veya **Fahrenheit (°F)** olarak değiştirilebilir.
-- **Menü Çubuğu Modları:** Menü çubuğunda doğrudan sıcaklığı görebilirsiniz:
-  - `İkon + Sıcaklık` (Örn: `⚡ 31°C`)
-  - `İkon + CPU & Sıcaklık` (Örn: `⚡ 12% 31°C`)
+### 1. 🔌 Ağ Port Yöneticisi & Tek Tıkla Süreç Sonlandırma (Kill Process)
+- **Problem:** Bir geliştirici olarak `3000`, `8080`, `5432` gibi bir portta proje başlatmak istediğinizde, arka planda unutulmuş başka bir süreç portu işgal eder ve terminalde `lsof -i :3000` ve `kill -9 <PID>` yazmak zorunda kalırsınız.
+- **Çözüm (Statix Port Yöneticisi):**
+  - Sistemde dinlenen (LISTEN modundaki) tüm TCP portlarını anlık listeler.
+  - Her port için **Port Numarası** (`:3000`), **Süreç Adı** (`node`, `python3`, `docker`), **PID** ve dinleme adresini gösterir.
+  - **Canlı Arama & Filtreleme:** Arama kutusuna sadece `3000` veya `node` yazarak portu anında bulun.
+  - **Tek Tıkla Sonlandırma (Kill):** İlgili portun yanındaki `Sonlandır` butonuna basarak portu işgal eden süreci anında öldürün ve portu serbest bırakın!
 
-### 2. 🚀 Açılışta Otomatik Başlatma (Launch at Login)
-- **Varsayılan Olarak Açık:** Statix ilk açıldığında otomatik olarak macOS oturum açılış öğelerine eklenir.
-- **Ayar Ekranından Değiştirilebilir:** Popover üzerindeki Ayarlar çekmecesinden veya sağ tık menüsünden tek tıkla açık/kapalı konuma getirilebilir.
-- **Apple Standartlarına Uyumlu:** macOS 13+ (Ventura, Sonoma, Sequoia) için modern `SMAppService`, eski macOS sürümleri için ise `LaunchAgent` altyapısını kullanır.
+### 2. ℹ️ Hakkında (About) Ekranı & İletişim
+- Proje ve geliştirici bilgilerini içeren özel sekme:
+  - **GitHub Deposu:** [https://github.com/gazi-dis/statix](https://github.com/gazi-dis/statix) (Tek tıkla tarayıcıda açılır)
+  - **Geliştirici İletişim E-Postası:** [gazidis60@gmail.com](mailto:gazidis60@gmail.com) (Tek tıkla mail istemcisini açar)
+  - **Sistem Özeti:** Donanım çipi, mimari, macOS sürümü ve çalışma süresi.
 
-### 3. 💿 DMG Kurulum Paketi (Statix-Universal.dmg)
-- Standart macOS sürükle-bırak (drag-and-drop) yükleme paketi `dist/Statix-Universal.dmg` oluşturulmuştur.
-- DMG çift tıklandığında açılan pencereden `Statix.app` doğrudan `Applications` (Uygulamalar) klasörüne sürüklenebilir.
+### 3. 🌡️ İşlemci (CPU) Sıcaklık Takibi
+- **Apple Silicon (M1/M2/M3/M4):** `IOHIDEventSystemClient` ile performans (`pACC`), verimlilik (`eACC`) ve `SoC Die` sıcaklıklarını 0.1°C hassasiyetle okur.
+- **Intel (x86_64):** `AppleSMC` üzerinden `TC0P`, `TC0D`, `TC0E`, `TCXC` anahtarlarıyla doğrudan işlemci sıcaklığını okur.
+- **Birim:** Ayarlardan **°C** veya **°F** seçilebilir.
+- **Menü Çubuğu Modları:** `İkon + Sıcaklık` veya `İkon + CPU & Sıcaklık` olarak üst barda görüntülenebilir.
+
+### 4. 🚀 Açılışta Otomatik Başlatma (Launch at Login)
+- Varsayılan olarak açık gelir; ayarlar panelinden veya menü çubuğundaki sağ tık menüsünden tek tıkla kapatılıp açılabilir.
+
+### 5. 💿 DMG Kurulum Paketi
+- Standart sürükle-bırak yükleyicisi [Statix-Universal.dmg](dist/Statix-Universal.dmg) olarak hazırdır.
 
 ---
 
-## 📊 Genel Özellikler
+## 🧭 Uygulama İçi Sekmeler
 
-### Üst Menü Çubuğu (Status Bar):
-- **Özel Şablon İkon:** Koyu ve açık menü çubuğuna otomatik adapte olan EKG / işlemci simgesi.
-- **Sol Tıklama:** Şık, yarı saydam cam efektli (frosted glass) **Dashboard** açılır penceresini gösterir.
-- **Sağ Tıklama:** Hızlı özet metrikleri, görünüm modları, açılış tercihi ve çıkış butonunu içeren yerel macOS menüsünü açar.
-
-### Canlı Dashboard:
-- **İşlemci (CPU):** Kullanım %, Sıcaklık (°C/°F), Kullanıcı / Sistem / Boşta oranları, son 35 saniyenin dalga grafiği (Sparkline), her bir çekirdeğin bağımsız canlı yük seviyesi (C1–C8).
-- **Bellek (RAM):** Kullanılan / Toplam GB, renkli 4 parçalı segment çubuğu (Kablolu, Aktif, Sıkıştırılmış, Boş), bellek baskısı (`Normal`, `Dikkat`, `Kritik`) ve Swap bellek.
-- **Depolama (Disk):** Ana disk doluluk oranı ve kalan kullanılabilir boş alan.
-- **Ağ Trafiği:** Canlı saniyelik İndirme (Download) ve Yükleme (Upload) hızları ile toplam oturum verisi.
-- **Pil / Güç:** Şarj durumu, pil seviyesi ve kalan süre (Masaüstü Mac'lerde otomatik güç adaptörü moduna geçer).
-- **En Çok Tüketen Süreçler:** CPU ve RAM tüketen ilk 5 aktif süreç (Ad, PID, Kullanım miktarı).
-- **Sistem Bilgisi & Uptime:** Açık kalma süresi ve Activity Monitor kısayolu.
+| Sekme | Açıklama |
+| :--- | :--- |
+| **📊 Sistem** | CPU kullanım %, dalga grafiği (Sparkline), çekirdek yükleri, sıcaklık, 4 parçalı RAM göstergesi, Disk doluluğu, anlık indirme/yükleme ağ hızları, pil durumu ve en çok tüketen 5 süreç. |
+| **🔌 Portlar** | Dinlenen aktif TCP portları, arama/filtreleme çubuğu ve tek tıkla portu işgal eden süreci sonlandırma (Kill Process) butonu. |
+| **ℹ️ Hakkında** | Proje GitHub adresi, geliştirici e-posta bilgisi, sistem mimari bilgileri ve lisans. |
 
 ---
 
 ## 🚀 Kurulum ve Çalıştırma
 
 ### 1. DMG Paketi ile Kurulum (Önerilen):
-`dist/Statix-Universal.dmg` dosyasını açıp uygulamayı `Applications` klasörüne sürükleyin:
-
 ```bash
 open dist/Statix-Universal.dmg
 ```
+Açılan pencereden `Statix.app` dosyasını `Applications` klasörüne sürükleyin.
 
 ### 2. Doğrudan Çalıştırma:
 ```bash
@@ -65,9 +65,11 @@ open dist/Statix.app
 
 ### 3. Kaynak Koddan Derleme:
 ```bash
-# Universal binary ve DMG üretimi
+# DMG üretimi:
 make dmg
-# veya: ./build.sh
+
+# Doğrudan derleyip çalıştırmak için:
+make run
 ```
 
 ---
@@ -80,13 +82,13 @@ statix/
 ├── build.sh                # Evrensel (Universal 2) derleme betiği
 ├── src/
 │   ├── main.m              # NSApplication başlatıcı
-│   ├── AppDelegate.h / .m  # Durum çubuğu, açılır pencere, menü ve açılış ayarları
-│   ├── SystemMonitor.h / .m# IOHID + AppleSMC sıcaklık ve sistem metrik motoru
+│   ├── AppDelegate.h / .m  # Durum çubuğu, açılır pencere, menü ve süreç sonlandırma yönetimi
+│   ├── SystemMonitor.h / .m# IOHID + AppleSMC sıcaklık, sistem metrikleri ve lsof port tarayıcı
 │   ├── Info.plist          # macOS bundle tanımları (LSUIElement=true)
 │   └── web/
-│       ├── index.html      # Sıcaklık rozetli ve açılış ayarlı arayüz
-│       ├── style.css       # Cam efekti, Apple stili toggle switch ve koyu tema
-│       └── app.js          # Canlı grafik, sıcaklık birimi dönüştürücü ve ayar yönetimi
+│       ├── index.html      # Çok sekmeli (Sistem, Portlar, Hakkında) görsel arayüz
+│       ├── style.css       # Cam efekti, Apple stili toggle switch, port kartları ve butonlar
+│       └── app.js          # Port yönetimi, süreç sonlandırma onayı, sıcaklık ve grafik kontrolü
 ├── tools/
 │   ├── create_dmg.sh       # DMG kurulum paketi oluşturucu
 │   ├── generate_icons.m    # Çoklu çözünürlük simge çizici

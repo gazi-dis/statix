@@ -74,4 +74,6 @@
 @interface SystemMonitor : NSObject
 + (instancetype)sharedMonitor;
 - (SystemSnapshot *)currentSnapshot;
+- (NSArray<NSDictionary *> *)listeningPorts;
+- (BOOL)killProcessWithPID:(pid_t)pid error:(NSString **)outError;
 @end

@@ -4,8 +4,11 @@
 
   // State
   let currentStats = null;
+  let currentMainTab = 'dashboard'; // 'dashboard', 'ports', 'about'
   let activeProcTab = 'cpu'; // 'cpu' or 'ram'
   let currentUnit = 'C';
+  let loadedPorts = [];
+  let pendingKillTimeout = null;
   const sparklineHistory = new Array(35).fill(0);
 
   // Helper formatters
@@ -32,12 +35,33 @@
     return celsius;
   }
 
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   // DOM Elements
   const el = {
+    // Header & Nav
     sysChip: document.getElementById('sysChip'),
     archBadge: document.getElementById('archBadge'),
     uptimeText: document.getElementById('uptimeText'),
-    
+    mainTabs: document.querySelectorAll('.main-tab'),
+    viewDashboard: document.getElementById('viewDashboard'),
+    viewPorts: document.getElementById('viewPorts'),
+    viewAbout: document.getElementById('viewAbout'),
+    portsBadge: document.getElementById('portsBadge'),
+
+    // Settings
+    btnSettings: document.getElementById('btnSettings'),
+    settingsDrawer: document.getElementById('settingsDrawer'),
+    toggleLaunchAtLogin: document.getElementById('toggleLaunchAtLogin'),
+    selectMode: document.getElementById('selectMode'),
+    unitControl: document.getElementById('unitControl'),
+    intervalControl: document.getElementById('intervalControl'),
+    btnActivityMonitor: document.getElementById('btnActivityMonitor'),
+    btnQuit: document.getElementById('btnQuit'),
+
     // CPU
     cpuTotalPercent: document.getElementById('cpuTotalPercent'),
     cpuProgressBar: document.getElementById('cpuProgressBar'),
@@ -84,15 +108,20 @@
     procMetricHeader: document.getElementById('procMetricHeader'),
     procTableBody: document.getElementById('procTableBody'),
 
-    // Settings
-    btnSettings: document.getElementById('btnSettings'),
-    settingsDrawer: document.getElementById('settingsDrawer'),
-    toggleLaunchAtLogin: document.getElementById('toggleLaunchAtLogin'),
-    selectMode: document.getElementById('selectMode'),
-    unitControl: document.getElementById('unitControl'),
-    intervalControl: document.getElementById('intervalControl'),
-    btnActivityMonitor: document.getElementById('btnActivityMonitor'),
-    btnQuit: document.getElementById('btnQuit')
+    // Ports
+    portSearchInput: document.getElementById('portSearchInput'),
+    btnClearSearch: document.getElementById('btnClearSearch'),
+    btnRefreshPorts: document.getElementById('btnRefreshPorts'),
+    portsList: document.getElementById('portsList'),
+    toastBanner: document.getElementById('toastBanner'),
+
+    // About
+    btnOpenGithub: document.getElementById('btnOpenGithub'),
+    btnOpenEmail: document.getElementById('btnOpenEmail'),
+    aboutCpu: document.getElementById('aboutCpu'),
+    aboutArch: document.getElementById('aboutArch'),
+    aboutOS: document.getElementById('aboutOS'),
+    aboutUptime: document.getElementById('aboutUptime')
   };
 
   // Canvas Sparkline Setup
@@ -167,7 +196,29 @@
     }
   }
 
-  // Initial config load from native
+  // Tab Switching
+  window.switchMainTab = function(tabName) {
+    currentMainTab = tabName;
+    el.mainTabs.forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tabName);
+    });
+
+    el.viewDashboard.style.display = tabName === 'dashboard' ? 'flex' : 'none';
+    el.viewPorts.style.display = tabName === 'ports' ? 'flex' : 'none';
+    el.viewAbout.style.display = tabName === 'about' ? 'block' : 'none';
+
+    if (tabName === 'ports') {
+      sendNative('getPorts');
+    }
+  };
+
+  el.mainTabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+      window.switchMainTab(btn.dataset.tab);
+    });
+  });
+
+  // Config loaded from native host
   window.onConfigLoaded = function(cfg) {
     if (!cfg) return;
     if (cfg.launchAtLogin !== undefined && el.toggleLaunchAtLogin) {
@@ -196,7 +247,7 @@
     }
   };
 
-  // Main stats update handler called from Objective-C
+  // Main system metrics update
   window.onSystemStatsUpdate = function(stats, unit) {
     if (!stats) return;
     currentStats = stats;
@@ -209,6 +260,12 @@
       el.sysChip.title = `${stats.system.hostname} (${stats.system.osVersion})`;
       el.archBadge.textContent = stats.system.architecture || 'Apple Silicon';
       el.uptimeText.textContent = stats.system.uptime || '0 saat';
+
+      // Update about screen fields
+      if (el.aboutCpu) el.aboutCpu.textContent = `${stats.cpu?.brand || 'Apple'} (${stats.cpu?.physicalCores || 8} Çekirdek)`;
+      if (el.aboutArch) el.aboutArch.textContent = stats.system.architecture || 'Universal';
+      if (el.aboutOS) el.aboutOS.textContent = stats.system.osVersion || 'macOS';
+      if (el.aboutUptime) el.aboutUptime.textContent = stats.system.uptime || '-';
     }
 
     // 2. CPU & Temperature
@@ -220,10 +277,12 @@
       el.cpuSystemPercent.textContent = (stats.cpu.systemPercent || 0).toFixed(1) + '%';
       el.cpuIdlePercent.textContent = (stats.cpu.idlePercent || 0).toFixed(1) + '%';
 
-      // Push to sparkline
+      // Sparkline
       sparklineHistory.shift();
       sparklineHistory.push(total);
-      drawSparkline();
+      if (currentMainTab === 'dashboard') {
+        drawSparkline();
+      }
 
       // Per-core meters
       if (stats.cpu.coresPercent && Array.isArray(stats.cpu.coresPercent)) {
@@ -312,13 +371,13 @@
     }
 
     // 7. Top Processes
-    renderProcesses();
+    if (currentMainTab === 'dashboard') {
+      renderProcesses();
+    }
   };
 
-  // Render CPU Cores
   function renderCores(cores) {
     if (!el.coresContainer) return;
-    
     if (el.coresContainer.children.length !== cores.length) {
       el.coresContainer.innerHTML = '';
       el.coresContainer.style.gridTemplateColumns = `repeat(${cores.length}, 1fr)`;
@@ -345,7 +404,6 @@
     }
   }
 
-  // Render Top Processes Table
   function renderProcesses() {
     if (!currentStats || !currentStats.processes) return;
     
@@ -380,12 +438,159 @@
     el.procTableBody.innerHTML = html;
   }
 
-  function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // ==========================================================================
+  // PORT MANAGER LOGIC
+  // ==========================================================================
+
+  window.onPortsLoaded = function(ports) {
+    loadedPorts = Array.isArray(ports) ? ports : [];
+    if (el.portsBadge) {
+      el.portsBadge.textContent = loadedPorts.length;
+    }
+    renderPorts();
+  };
+
+  function renderPorts() {
+    if (!el.portsList) return;
+    const query = (el.portSearchInput.value || '').trim().toLowerCase();
+
+    let filtered = loadedPorts;
+    if (query) {
+      filtered = loadedPorts.filter(p => {
+        const portStr = String(p.port);
+        const pidStr = String(p.pid);
+        const cmd = (p.command || '').toLowerCase();
+        const addr = (p.address || '').toLowerCase();
+        const path = (p.path || '').toLowerCase();
+        return portStr.includes(query) || pidStr.includes(query) || cmd.includes(query) || addr.includes(query) || path.includes(query);
+      });
+    }
+
+    if (filtered.length === 0) {
+      el.portsList.innerHTML = `
+        <div class="ports-empty">
+          ${query ? 'Aramanıza uygun dinlenen port bulunamadı.' : 'Şu anda dinlenen aktif port bulunmuyor.'}
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    filtered.forEach(p => {
+      const tooltip = p.path ? `${escapeHtml(p.command)} (${escapeHtml(p.path)})` : escapeHtml(p.command);
+      html += `
+        <div class="port-card" data-pid="${p.pid}" data-port="${p.port}">
+          <div class="port-card-left">
+            <div class="port-badge">:${p.port}</div>
+            <div class="port-card-meta">
+              <div class="port-cmd-row">
+                <span class="port-cmd" title="${tooltip}">${escapeHtml(p.command)}</span>
+                <span class="port-pid">PID: ${p.pid}</span>
+              </div>
+              <div class="port-addr" title="${escapeHtml(p.address)}">${escapeHtml(p.address)}</div>
+            </div>
+          </div>
+          <button class="btn-kill" data-pid="${p.pid}" data-port="${p.port}" data-cmd="${escapeHtml(p.command)}" title="Portu işgal eden süreci durdur">
+            Sonlandır
+          </button>
+        </div>
+      `;
+    });
+
+    el.portsList.innerHTML = html;
+
+    // Attach kill listeners
+    el.portsList.querySelectorAll('.btn-kill').forEach(btn => {
+      btn.addEventListener('click', handleKillButtonClick);
+    });
   }
 
-  // Event Listeners
+  function handleKillButtonClick(e) {
+    const btn = e.currentTarget;
+    const pid = parseInt(btn.dataset.pid, 10);
+    const port = parseInt(btn.dataset.port, 10);
+    const cmd = btn.dataset.cmd;
+
+    if (!btn.classList.contains('confirm')) {
+      // First click: Request confirmation
+      btn.classList.add('confirm');
+      btn.textContent = 'Emin misin?';
+
+      if (pendingKillTimeout) clearTimeout(pendingKillTimeout);
+      pendingKillTimeout = setTimeout(() => {
+        btn.classList.remove('confirm');
+        btn.textContent = 'Sonlandır';
+      }, 3500);
+    } else {
+      // Confirmed click: Execute kill
+      btn.classList.remove('confirm');
+      btn.textContent = 'Sonlandırılıyor...';
+      btn.disabled = true;
+
+      sendNative('killProcess', { pid: pid, port: port, command: cmd });
+    }
+  }
+
+  window.onProcessKilled = function(res) {
+    if (!res) return;
+    const toast = el.toastBanner;
+    if (!toast) return;
+
+    toast.style.display = 'block';
+    if (res.success) {
+      toast.className = 'toast-banner toast-success';
+      toast.textContent = `✅ Port :${res.port} (PID ${res.pid}) başarıyla serbest bırakıldı.`;
+    } else {
+      toast.className = 'toast-banner toast-error';
+      toast.textContent = `❌ Hata: ${res.error || 'Süreç sonlandırılamadı (Yetki yetersiz).'}`;
+    }
+
+    setTimeout(() => {
+      toast.style.display = 'none';
+    }, 4000);
+  };
+
+  // Search input events
+  if (el.portSearchInput) {
+    el.portSearchInput.addEventListener('input', () => {
+      const val = el.portSearchInput.value.trim();
+      el.btnClearSearch.style.display = val.length > 0 ? 'block' : 'none';
+      renderPorts();
+    });
+  }
+
+  if (el.btnClearSearch) {
+    el.btnClearSearch.addEventListener('click', () => {
+      el.portSearchInput.value = '';
+      el.btnClearSearch.style.display = 'none';
+      renderPorts();
+    });
+  }
+
+  if (el.btnRefreshPorts) {
+    el.btnRefreshPorts.addEventListener('click', () => {
+      el.btnRefreshPorts.style.transform = 'rotate(180deg)';
+      setTimeout(() => { el.btnRefreshPorts.style.transform = 'none'; }, 300);
+      sendNative('getPorts');
+    });
+  }
+
+  // ==========================================================================
+  // ABOUT LINKS
+  // ==========================================================================
+  if (el.btnOpenGithub) {
+    el.btnOpenGithub.addEventListener('click', () => {
+      sendNative('openURL', { url: 'https://github.com/gazi-dis/statix' });
+    });
+  }
+
+  if (el.btnOpenEmail) {
+    el.btnOpenEmail.addEventListener('click', () => {
+      sendNative('openURL', { url: 'mailto:gazidis60@gmail.com' });
+    });
+  }
+
+  // Event Listeners for dashboard
   el.tabCpu.addEventListener('click', () => {
     activeProcTab = 'cpu';
     el.tabCpu.classList.add('active');
@@ -404,7 +609,6 @@
     el.settingsDrawer.classList.toggle('open');
   });
 
-  // Launch at login toggle
   el.toggleLaunchAtLogin.addEventListener('change', (e) => {
     sendNative('setLaunchAtLogin', { enabled: e.target.checked });
   });
@@ -413,7 +617,6 @@
     sendNative('setMode', { mode: e.target.value });
   });
 
-  // Temperature unit selector
   el.unitControl.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
       el.unitControl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
@@ -424,7 +627,6 @@
     });
   });
 
-  // Interval selector
   el.intervalControl.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
       el.intervalControl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
@@ -442,10 +644,8 @@
     sendNative('quit');
   });
 
-  // Initial Sparkline Render
+  // Initial draw & initial config
   drawSparkline();
-
-  // Request initial config from host
   sendNative('getConfig');
 
 })();

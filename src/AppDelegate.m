@@ -123,13 +123,11 @@ static NSString *formatSpeed(double bytesPerSec) {
     [[NSUserDefaults standardUserDefaults] setBool:enabled forKey:@"StatixLaunchAtLogin"];
     [self syncLaunchAtLoginStatus:enabled];
     
-    // Notify webview
     NSString *js = [NSString stringWithFormat:@"if (window.onLaunchAtLoginChanged) { window.onLaunchAtLoginChanged(%@); }", enabled ? @"true" : @"false"];
     [self.webView evaluateJavaScript:js completionHandler:nil];
 }
 
 - (void)syncLaunchAtLoginStatus:(BOOL)enabled {
-    // 1. SMAppService for macOS 13+
     if (@available(macOS 13.0, *)) {
         SMAppService *service = [SMAppService mainAppService];
         NSError *error = nil;
@@ -144,7 +142,6 @@ static NSString *formatSpeed(double bytesPerSec) {
         }
     }
     
-    // 2. LaunchAgent plist fallback in ~/Library/LaunchAgents/
     NSString *agentDir = [@"~/Library/LaunchAgents" stringByExpandingTildeInPath];
     NSString *plistPath = [agentDir stringByAppendingPathComponent:@"com.gazi.statix.plist"];
     
@@ -199,9 +196,14 @@ static NSString *formatSpeed(double bytesPerSec) {
         }];
     }
     
-    // Send state and stats
     [self sendInitialConfigToWeb];
     [self updateStats];
+}
+
+- (void)openPopoverWithTab:(NSString *)tab {
+    [self openPopover:nil];
+    NSString *js = [NSString stringWithFormat:@"if (window.switchMainTab) { window.switchMainTab('%@'); }", tab];
+    [self.webView evaluateJavaScript:js completionHandler:nil];
 }
 
 - (void)sendInitialConfigToWeb {
@@ -267,7 +269,6 @@ static NSString *formatSpeed(double bytesPerSec) {
         } else if ([self.displayMode isEqualToString:@"net"]) {
             button.title = [NSString stringWithFormat:@" ↓%@ ↑%@", formatSpeed(snapshot.networkDownloadSpeed), formatSpeed(snapshot.networkUploadSpeed)];
         } else {
-            // Default "cpu"
             button.title = [NSString stringWithFormat:@" %.0f%%", snapshot.cpuTotalPercent];
         }
     }
@@ -278,6 +279,20 @@ static NSString *formatSpeed(double bytesPerSec) {
         NSString *js = [NSString stringWithFormat:@"if (window.onSystemStatsUpdate) { window.onSystemStatsUpdate(%@, '%@'); }", json, self.tempUnit];
         [self.webView evaluateJavaScript:js completionHandler:nil];
     }
+}
+
+- (void)sendPortsToWeb {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSArray *ports = [[SystemMonitor sharedMonitor] listeningPorts];
+        NSError *err = nil;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:ports options:0 error:&err];
+        NSString *json = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"[]";
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSString *js = [NSString stringWithFormat:@"if (window.onPortsLoaded) { window.onPortsLoaded(%@); }", json];
+            [self.webView evaluateJavaScript:js completionHandler:nil];
+        });
+    });
 }
 
 #pragma mark - WebKit Message Handler
@@ -292,6 +307,14 @@ static NSString *formatSpeed(double bytesPerSec) {
         [NSApp terminate:nil];
     } else if ([action isEqualToString:@"openActivityMonitor"]) {
         [[NSWorkspace sharedWorkspace] launchApplication:@"Activity Monitor"];
+    } else if ([action isEqualToString:@"openURL"]) {
+        NSString *urlStr = body[@"url"];
+        if (urlStr) {
+            NSURL *url = [NSURL URLWithString:urlStr];
+            if (url) {
+                [[NSWorkspace sharedWorkspace] openURL:url];
+            }
+        }
     } else if ([action isEqualToString:@"setMode"]) {
         NSString *newMode = body[@"mode"];
         if (newMode) {
@@ -315,6 +338,29 @@ static NSString *formatSpeed(double bytesPerSec) {
             self.updateInterval = [intervalNum doubleValue];
             [[NSUserDefaults standardUserDefaults] setDouble:self.updateInterval forKey:@"StatixUpdateInterval"];
             [self restartTimer];
+        }
+    } else if ([action isEqualToString:@"getPorts"]) {
+        [self sendPortsToWeb];
+    } else if ([action isEqualToString:@"killProcess"]) {
+        pid_t pid = [body[@"pid"] intValue];
+        int port = [body[@"port"] intValue];
+        NSString *err = nil;
+        BOOL success = [[SystemMonitor sharedMonitor] killProcessWithPID:pid error:&err];
+        
+        NSString *js = [NSString stringWithFormat:
+            @"if (window.onProcessKilled) { window.onProcessKilled({ success: %@, pid: %d, port: %d, error: '%@' }); }",
+            success ? @"true" : @"false",
+            pid,
+            port,
+            err ? [err stringByReplacingOccurrencesOfString:@"'" withString:@"\\'"] : @""
+        ];
+        [self.webView evaluateJavaScript:js completionHandler:nil];
+        
+        if (success) {
+            // refresh ports after killing
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self sendPortsToWeb];
+            });
         }
     } else if ([action isEqualToString:@"getConfig"]) {
         [self sendInitialConfigToWeb];
@@ -349,9 +395,21 @@ static NSString *formatSpeed(double bytesPerSec) {
     [menu addItem:[NSMenuItem separatorItem]];
     
     // Open Dashboard
-    NSMenuItem *dashItem = [[NSMenuItem alloc] initWithTitle:@"Dashboard'ı Aç" action:@selector(openPopover:) keyEquivalent:@"d"];
+    NSMenuItem *dashItem = [[NSMenuItem alloc] initWithTitle:@"Dashboard'ı Aç" action:@selector(openDashboardMenuItem:) keyEquivalent:@"d"];
     dashItem.target = self;
     [menu addItem:dashItem];
+    
+    // Open Ports Manager
+    NSMenuItem *portsItem = [[NSMenuItem alloc] initWithTitle:@"Port Yöneticisi'ni Aç" action:@selector(openPortsMenuItem:) keyEquivalent:@"p"];
+    portsItem.target = self;
+    [menu addItem:portsItem];
+    
+    // Open About
+    NSMenuItem *aboutItem = [[NSMenuItem alloc] initWithTitle:@"Statix Hakkında" action:@selector(openAboutMenuItem:) keyEquivalent:@"i"];
+    aboutItem.target = self;
+    [menu addItem:aboutItem];
+    
+    [menu addItem:[NSMenuItem separatorItem]];
     
     // Menu Bar Display Mode Submenu
     NSMenuItem *modeParent = [[NSMenuItem alloc] initWithTitle:@"Üst Bar Görünümü" action:nil keyEquivalent:@""];
@@ -419,6 +477,18 @@ static NSString *formatSpeed(double bytesPerSec) {
     [menu addItem:quitItem];
     
     [self.statusItem popUpStatusItemMenu:menu];
+}
+
+- (void)openDashboardMenuItem:(id)sender {
+    [self openPopoverWithTab:@"dashboard"];
+}
+
+- (void)openPortsMenuItem:(id)sender {
+    [self openPopoverWithTab:@"ports"];
+}
+
+- (void)openAboutMenuItem:(id)sender {
+    [self openPopoverWithTab:@"about"];
 }
 
 - (void)toggleLaunchAtLoginMenuItem:(NSMenuItem *)sender {

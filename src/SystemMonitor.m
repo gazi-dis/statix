@@ -9,6 +9,7 @@
 #import <IOKit/ps/IOPSKeys.h>
 #import <IOKit/IOKitLib.h>
 #include <libproc.h>
+#include <signal.h>
 
 // Apple HID Event System Client declarations
 typedef struct __IOHIDEvent *IOHIDEventRef;
@@ -380,7 +381,6 @@ static uint32_t stringToSMCKey(const char *str) {
             outSize = sizeof(output);
             
             if (IOConnectCallStructMethod(conn, KERN_INDEX_SMC, &input, sizeof(input), &output, &outSize) == kIOReturnSuccess) {
-                // Parse sp78 format: 1 signed bit, 7 integer bits, 8 fraction bits
                 double temp = (double)((int16_t)((output.bytes[0] << 8) | output.bytes[1])) / 256.0;
                 if (temp > 10.0 && temp < 125.0) {
                     sum += temp;
@@ -733,6 +733,99 @@ static uint32_t stringToSMCKey(const char *str) {
         }];
     }
     snapshot.topRamProcesses = topRam;
+}
+
+#pragma mark - Listening Ports
+
+- (NSArray<NSDictionary *> *)listeningPorts {
+    NSMutableArray<NSDictionary *> *results = [NSMutableArray array];
+    
+    NSTask *task = [[NSTask alloc] init];
+    task.launchPath = @"/usr/sbin/lsof";
+    task.arguments = @[@"-iTCP", @"-sTCP:LISTEN", @"-n", @"-P", @"-F", @"pcn"];
+    
+    NSPipe *pipe = [NSPipe pipe];
+    task.standardOutput = pipe;
+    task.standardError = [NSPipe pipe];
+    
+    NSError *error = nil;
+    if (![task launchAndReturnError:&error]) {
+        return results;
+    }
+    
+    NSData *data = [pipe.fileHandleForReading readDataToEndOfFile];
+    [task waitUntilExit];
+    
+    NSString *output = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    NSArray *lines = [output componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+    
+    pid_t currentPid = 0;
+    NSString *currentCmd = @"";
+    NSMutableSet *seen = [NSMutableSet set];
+    
+    for (NSString *line in lines) {
+        if (line.length == 0) continue;
+        unichar prefix = [line characterAtIndex:0];
+        NSString *val = [line substringFromIndex:1];
+        
+        if (prefix == 'p') {
+            currentPid = (pid_t)[val intValue];
+        } else if (prefix == 'c') {
+            currentCmd = val;
+        } else if (prefix == 'n') {
+            NSRange colonRange = [val rangeOfString:@":" options:NSBackwardsSearch];
+            if (colonRange.location != NSNotFound) {
+                int port = [[val substringFromIndex:colonRange.location + 1] intValue];
+                if (port > 0) {
+                    NSString *key = [NSString stringWithFormat:@"%d:%d", currentPid, port];
+                    if (![seen containsObject:key]) {
+                        [seen addObject:key];
+                        
+                        char pathBuf[PROC_PIDPATHINFO_MAXSIZE];
+                        NSString *fullPath = @"";
+                        if (proc_pidpath(currentPid, pathBuf, sizeof(pathBuf)) > 0) {
+                            fullPath = [NSString stringWithUTF8String:pathBuf];
+                        }
+                        
+                        [results addObject:@{
+                            @"pid": @(currentPid),
+                            @"command": currentCmd ?: @"Unknown",
+                            @"port": @(port),
+                            @"address": val ?: @"*",
+                            @"path": fullPath ?: @""
+                        }];
+                    }
+                }
+            }
+        }
+    }
+    
+    [results sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        int portA = [a[@"port"] intValue];
+        int portB = [b[@"port"] intValue];
+        if (portA < portB) return NSOrderedAscending;
+        if (portA > portB) return NSOrderedDescending;
+        return [a[@"command"] compare:b[@"command"]];
+    }];
+    
+    return results;
+}
+
+- (BOOL)killProcessWithPID:(pid_t)pid error:(NSString **)outError {
+    if (pid <= 1) {
+        if (outError) *outError = @"Sistem süreçleri sonlandırılamaz.";
+        return NO;
+    }
+    if (kill(pid, SIGTERM) == 0) {
+        return YES;
+    }
+    if (kill(pid, SIGKILL) == 0) {
+        return YES;
+    }
+    if (outError) {
+        *outError = [NSString stringWithUTF8String:strerror(errno)];
+    }
+    return NO;
 }
 
 #pragma mark - Uptime

@@ -44,6 +44,31 @@
       </div>
     </header>
 
+    <!-- Navigation Bar (Sistem / Portlar / Hakkında) -->
+    <nav class="main-tabs">
+      <button class="main-tab active" data-tab="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+        </svg>
+        <span>Sistem</span>
+      </button>
+      <button class="main-tab" data-tab="ports">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="2"/>
+          <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/>
+        </svg>
+        <span>Portlar</span>
+        <span class="tab-badge" id="portsBadge">0</span>
+      </button>
+      <button class="main-tab" data-tab="about">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+        </svg>
+        <span>Hakkında</span>
+      </button>
+    </nav>
+
     <!-- Quick Settings Drawer (expandable) -->
     <div class="settings-drawer" id="settingsDrawer">
       <div class="settings-title">Uygulama Tercihleri</div>
@@ -90,8 +115,8 @@
       </div>
     </div>
 
-    <!-- Main Scrollable Dashboard -->
-    <div class="dashboard-content">
+    <!-- TAB 1: SYSTEM DASHBOARD -->
+    <div class="dashboard-content tab-view" id="viewDashboard">
       
       <!-- CPU Card -->
       <section class="card card-cpu">
@@ -279,6 +304,124 @@
         </div>
       </section>
 
+    </div>
+
+    <!-- TAB 2: PORT MANAGER (NETWORK PORTS) -->
+    <div class="tab-view ports-view" id="viewPorts" style="display: none;">
+      <!-- Search & Refresh Toolbar -->
+      <div class="ports-toolbar">
+        <div class="search-box">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="portSearchInput" placeholder="Port veya süreç filtrele... (örn: 3000, node)">
+          <button class="clear-btn" id="btnClearSearch" style="display: none;">×</button>
+        </div>
+        <button class="icon-btn" id="btnRefreshPorts" title="Yenile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Toast Feedback -->
+      <div class="toast-banner" id="toastBanner" style="display: none;"></div>
+
+      <!-- Ports Scroll List -->
+      <div class="ports-scroll-list" id="portsList">
+        <div class="ports-loading">Portlar taranıyor...</div>
+      </div>
+    </div>
+
+    <!-- TAB 3: ABOUT (HAKKINDA) -->
+    <div class="tab-view about-view" id="viewAbout" style="display: none;">
+      <div class="about-card">
+        
+        <!-- App Logo & Version -->
+        <div class="about-hero">
+          <div class="about-logo-box">
+            <svg class="about-logo-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="4" y="4" width="16" height="16" rx="4" />
+              <path d="M4 12h3l2-4 4 8 3-4h4" />
+            </svg>
+          </div>
+          <div class="about-hero-text">
+            <div class="about-title">STATIX</div>
+            <div class="about-badge">v1.0.0 • Universal 2</div>
+          </div>
+        </div>
+
+        <p class="about-desc">
+          macOS Apple Silicon (M1/M2/M3/M4) ve Intel mimarileri için yerel, ultra hafif ve modern sistem kaynak ve port izleme aracı.
+        </p>
+
+        <!-- Project & Developer Section -->
+        <div class="about-section">
+          <div class="about-section-header">PROJE & İLETİŞİM</div>
+          
+          <!-- GitHub Card -->
+          <div class="about-action-card" id="btnOpenGithub">
+            <div class="action-card-left">
+              <div class="action-icon github-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+              </div>
+              <div class="action-card-meta">
+                <span class="action-card-title">GitHub Proje Deposu</span>
+                <span class="action-card-sub">https://github.com/gazi-dis/statix</span>
+              </div>
+            </div>
+            <button class="pill-btn">Aç ↗</button>
+          </div>
+
+          <!-- Email Card -->
+          <div class="about-action-card" id="btnOpenEmail">
+            <div class="action-card-left">
+              <div class="action-icon email-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                  <polyline points="22,6 12,13 2,6"/>
+                </svg>
+              </div>
+              <div class="action-card-meta">
+                <span class="action-card-title">Geliştirici İletişim</span>
+                <span class="action-card-sub">gazidis60@gmail.com</span>
+              </div>
+            </div>
+            <button class="pill-btn">E-posta ✉️</button>
+          </div>
+        </div>
+
+        <!-- System Details Section -->
+        <div class="about-section">
+          <div class="about-section-header">SİSTEM ÖZETİ</div>
+          <div class="about-sys-grid">
+            <div class="sys-item">
+              <span class="sys-k">İşlemci</span>
+              <span class="sys-v" id="aboutCpu">-</span>
+            </div>
+            <div class="sys-item">
+              <span class="sys-k">Mimari</span>
+              <span class="sys-v" id="aboutArch">-</span>
+            </div>
+            <div class="sys-item">
+              <span class="sys-k">İşletim Sistemi</span>
+              <span class="sys-v" id="aboutOS">-</span>
+            </div>
+            <div class="sys-item">
+              <span class="sys-k">Açık Kalma Süresi</span>
+              <span class="sys-v" id="aboutUptime">-</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="about-footer-text">
+          Statix Açık Kaynak Projedir • MIT Lisansı • 2026
+        </div>
+
+      </div>
     </div>
 
     <!-- Footer -->
