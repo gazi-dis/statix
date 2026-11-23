@@ -1,7 +1,7 @@
 CC = clang
 MIN_MACOS = 11.0
 CFLAGS = -O3 -fobjc-arc -Wall -Wno-deprecated-declarations -mmacosx-version-min=$(MIN_MACOS)
-FRAMEWORKS = -framework Cocoa -framework WebKit -framework IOKit -lproc
+FRAMEWORKS = -framework Cocoa -framework WebKit -framework IOKit -framework ServiceManagement -lproc
 SOURCES = src/main.m src/AppDelegate.m src/SystemMonitor.m
 
 APP_NAME = Statix
@@ -9,7 +9,7 @@ BUILD_DIR = build
 DIST_DIR = dist
 APP_BUNDLE = $(BUILD_DIR)/$(APP_NAME).app
 
-.PHONY: all clean run icons dist install help
+.PHONY: all clean run icons dist app dmg install help
 
 all: dist
 
@@ -44,6 +44,10 @@ dist: app
 	cd $(DIST_DIR) && rm -f $(APP_NAME)-Universal.zip && zip -r -q $(APP_NAME)-Universal.zip $(APP_NAME).app
 	@echo "==> Distribution package ready at $(DIST_DIR)/$(APP_NAME).app"
 
+dmg: dist
+	@chmod +x tools/create_dmg.sh
+	./tools/create_dmg.sh
+
 run: app
 	@echo "==> Launching $(APP_NAME)..."
 	open $(APP_BUNDLE)
@@ -60,6 +64,7 @@ clean:
 help:
 	@echo "Statix Build System:"
 	@echo "  make dist     - Build Universal macOS app bundle and zip"
+	@echo "  make dmg      - Create DMG drag-and-drop installer"
 	@echo "  make run      - Build and run Statix"
 	@echo "  make install  - Install Statix to /Applications"
 	@echo "  make clean    - Remove build artifacts"

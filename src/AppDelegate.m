@@ -1,4 +1,5 @@
 #import "AppDelegate.h"
+#import <ServiceManagement/ServiceManagement.h>
 
 @interface AppDelegate ()
 @property (nonatomic, strong) id eventMonitor;
@@ -24,21 +25,29 @@ static NSString *formatSpeed(double bytesPerSec) {
     // 2. Load preferences
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     self.displayMode = [defaults stringForKey:@"StatixDisplayMode"] ?: @"cpu";
+    self.tempUnit = [defaults stringForKey:@"StatixTempUnit"] ?: @"C";
+    
     double savedInterval = [defaults doubleForKey:@"StatixUpdateInterval"];
     self.updateInterval = savedInterval > 0.4 ? savedInterval : 1.5;
     
-    // 3. Setup Menu Bar Status Item
+    // 3. Launch at login: DEFAULT IS ENABLED (YES)
+    if ([defaults objectForKey:@"StatixLaunchAtLogin"] == nil) {
+        [self setLaunchAtLogin:YES];
+    } else {
+        self.launchAtLogin = [defaults boolForKey:@"StatixLaunchAtLogin"];
+        [self syncLaunchAtLoginStatus:self.launchAtLogin];
+    }
+    
+    // 4. Setup Menu Bar Status Item
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
     NSStatusBarButton *button = self.statusItem.button;
     if (button) {
-        // Load menu bar icon
         NSString *iconPath = [[NSBundle mainBundle] pathForResource:@"menubar_icon" ofType:@"png"];
         NSImage *icon = nil;
         if (iconPath) {
             icon = [[NSImage alloc] initWithContentsOfFile:iconPath];
             [icon setTemplate:YES];
         } else {
-            // Fallback system symbol if available
             if (@available(macOS 11.0, *)) {
                 icon = [NSImage imageWithSystemSymbolName:@"waveform.path.ecg" accessibilityDescription:@"Statix"];
             }
@@ -53,14 +62,13 @@ static NSString *formatSpeed(double bytesPerSec) {
         [button sendActionOn:(NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp)];
     }
     
-    // 4. Setup Popover
+    // 5. Setup Popover
     self.popover = [[NSPopover alloc] init];
     self.popover.contentSize = NSMakeSize(380, 580);
     self.popover.behavior = NSPopoverBehaviorTransient;
     self.popover.animates = YES;
     self.popover.delegate = self;
     
-    // Setup WKWebView inside Popover
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     config.websiteDataStore = [WKWebsiteDataStore nonPersistentDataStore];
     [config.userContentController addScriptMessageHandler:self name:@"statix"];
@@ -68,7 +76,6 @@ static NSString *formatSpeed(double bytesPerSec) {
     NSViewController *vc = [[NSViewController alloc] init];
     NSView *containerView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 380, 580)];
     
-    // Vibrant frosted glass effect view
     NSVisualEffectView *vibrantView = [[NSVisualEffectView alloc] initWithFrame:containerView.bounds];
     vibrantView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     vibrantView.material = NSVisualEffectMaterialPopover;
@@ -76,7 +83,6 @@ static NSString *formatSpeed(double bytesPerSec) {
     vibrantView.state = NSVisualEffectStateActive;
     [containerView addSubview:vibrantView];
     
-    // WKWebView on top
     self.webView = [[WKWebView alloc] initWithFrame:containerView.bounds configuration:config];
     self.webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [self.webView setValue:@NO forKey:@"drawsBackground"];
@@ -85,20 +91,15 @@ static NSString *formatSpeed(double bytesPerSec) {
     vc.view = containerView;
     self.popover.contentViewController = vc;
     
-    // Load local web UI
     NSString *htmlPath = [[NSBundle mainBundle] pathForResource:@"index" ofType:@"html" inDirectory:@"web"];
     if (htmlPath) {
         NSURL *fileURL = [NSURL fileURLWithPath:htmlPath];
         NSURL *dirURL = [fileURL URLByDeletingLastPathComponent];
         [self.webView loadFileURL:fileURL allowingReadAccessToURL:dirURL];
-    } else {
-        NSLog(@"[Statix] Warning: index.html not found in bundled resources!");
     }
     
-    // 5. Start polling timer
+    // 6. Start polling timer
     [self restartTimer];
-    
-    // Initial fetch
     [self updateStats];
 }
 
@@ -113,6 +114,55 @@ static NSString *formatSpeed(double bytesPerSec) {
                                                 userInfo:nil
                                                  repeats:YES];
     [[NSRunLoop currentRunLoop] addTimer:self.timer forMode:NSRunLoopCommonModes];
+}
+
+#pragma mark - Launch At Login
+
+- (void)setLaunchAtLogin:(BOOL)enabled {
+    _launchAtLogin = enabled;
+    [[NSUserDefaults standardUserDefaults] setBool:enabled forKey:@"StatixLaunchAtLogin"];
+    [self syncLaunchAtLoginStatus:enabled];
+    
+    // Notify webview
+    NSString *js = [NSString stringWithFormat:@"if (window.onLaunchAtLoginChanged) { window.onLaunchAtLoginChanged(%@); }", enabled ? @"true" : @"false"];
+    [self.webView evaluateJavaScript:js completionHandler:nil];
+}
+
+- (void)syncLaunchAtLoginStatus:(BOOL)enabled {
+    // 1. SMAppService for macOS 13+
+    if (@available(macOS 13.0, *)) {
+        SMAppService *service = [SMAppService mainAppService];
+        NSError *error = nil;
+        if (enabled) {
+            if (service.status != SMAppServiceStatusEnabled) {
+                [service registerAndReturnError:&error];
+            }
+        } else {
+            if (service.status == SMAppServiceStatusEnabled) {
+                [service unregisterAndReturnError:&error];
+            }
+        }
+    }
+    
+    // 2. LaunchAgent plist fallback in ~/Library/LaunchAgents/
+    NSString *agentDir = [@"~/Library/LaunchAgents" stringByExpandingTildeInPath];
+    NSString *plistPath = [agentDir stringByAppendingPathComponent:@"com.gazi.statix.plist"];
+    
+    if (enabled) {
+        [[NSFileManager defaultManager] createDirectoryAtPath:agentDir withIntermediateDirectories:YES attributes:nil error:nil];
+        NSString *appPath = [[NSBundle mainBundle] bundlePath];
+        NSString *execPath = [appPath stringByAppendingPathComponent:@"Contents/MacOS/Statix"];
+        
+        NSDictionary *plistDict = @{
+            @"Label": @"com.gazi.statix",
+            @"ProgramArguments": @[execPath],
+            @"RunAtLoad": @YES,
+            @"ProcessType": @"Interactive"
+        };
+        [plistDict writeToFile:plistPath atomically:YES];
+    } else {
+        [[NSFileManager defaultManager] removeItemAtPath:plistPath error:nil];
+    }
 }
 
 #pragma mark - Status Item & Popover Actions
@@ -141,7 +191,6 @@ static NSString *formatSpeed(double bytesPerSec) {
     [self.popover showRelativeToRect:button.bounds ofView:button preferredEdge:NSRectEdgeMinY];
     [NSApp activateIgnoringOtherApps:YES];
     
-    // Install global monitor to close popover when clicking anywhere else
     if (!self.eventMonitor) {
         __weak typeof(self) weakSelf = self;
         self.eventMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:(NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown)
@@ -150,8 +199,20 @@ static NSString *formatSpeed(double bytesPerSec) {
         }];
     }
     
-    // Send immediate update so popover displays fresh stats
+    // Send state and stats
+    [self sendInitialConfigToWeb];
     [self updateStats];
+}
+
+- (void)sendInitialConfigToWeb {
+    NSString *js = [NSString stringWithFormat:
+        @"if (window.onConfigLoaded) { window.onConfigLoaded({ launchAtLogin: %@, mode: '%@', unit: '%@', interval: %f }); }",
+        self.launchAtLogin ? @"true" : @"false",
+        self.displayMode,
+        self.tempUnit,
+        self.updateInterval
+    ];
+    [self.webView evaluateJavaScript:js completionHandler:nil];
 }
 
 - (void)closePopover:(id)sender {
@@ -173,6 +234,13 @@ static NSString *formatSpeed(double bytesPerSec) {
 
 #pragma mark - Periodic Metric Updates
 
+- (double)temperatureForDisplay:(double)celsius {
+    if ([self.tempUnit isEqualToString:@"F"]) {
+        return (celsius * 9.0 / 5.0) + 32.0;
+    }
+    return celsius;
+}
+
 - (void)updateStats {
     SystemSnapshot *snapshot = [[SystemMonitor sharedMonitor] currentSnapshot];
     self.lastSnapshot = snapshot;
@@ -180,11 +248,22 @@ static NSString *formatSpeed(double bytesPerSec) {
     // Update Menu Bar Title
     NSStatusBarButton *button = self.statusItem.button;
     if (button) {
+        double dispTemp = [self temperatureForDisplay:snapshot.cpuTemperature];
+        NSString *u = self.tempUnit;
+        
         if ([self.displayMode isEqualToString:@"icon"]) {
             button.title = @"";
         } else if ([self.displayMode isEqualToString:@"cpu_ram"]) {
             double ramPercent = snapshot.ramTotalBytes > 0 ? ((double)snapshot.ramUsedBytes / snapshot.ramTotalBytes) * 100.0 : 0.0;
             button.title = [NSString stringWithFormat:@" C:%.0f%% M:%.0f%%", snapshot.cpuTotalPercent, ramPercent];
+        } else if ([self.displayMode isEqualToString:@"temp"]) {
+            button.title = snapshot.hasTemperature ? [NSString stringWithFormat:@" %.0f°%@", dispTemp, u] : @" --°C";
+        } else if ([self.displayMode isEqualToString:@"cpu_temp"]) {
+            if (snapshot.hasTemperature) {
+                button.title = [NSString stringWithFormat:@" %.0f%% %.0f°%@", snapshot.cpuTotalPercent, dispTemp, u];
+            } else {
+                button.title = [NSString stringWithFormat:@" %.0f%%", snapshot.cpuTotalPercent];
+            }
         } else if ([self.displayMode isEqualToString:@"net"]) {
             button.title = [NSString stringWithFormat:@" ↓%@ ↑%@", formatSpeed(snapshot.networkDownloadSpeed), formatSpeed(snapshot.networkUploadSpeed)];
         } else {
@@ -196,7 +275,7 @@ static NSString *formatSpeed(double bytesPerSec) {
     // Update Popover UI if open
     if (self.popover.isShown) {
         NSString *json = [snapshot toJSONString];
-        NSString *js = [NSString stringWithFormat:@"if (window.onSystemStatsUpdate) { window.onSystemStatsUpdate(%@); }", json];
+        NSString *js = [NSString stringWithFormat:@"if (window.onSystemStatsUpdate) { window.onSystemStatsUpdate(%@, '%@'); }", json, self.tempUnit];
         [self.webView evaluateJavaScript:js completionHandler:nil];
     }
 }
@@ -220,6 +299,16 @@ static NSString *formatSpeed(double bytesPerSec) {
             [[NSUserDefaults standardUserDefaults] setObject:newMode forKey:@"StatixDisplayMode"];
             [self updateStats];
         }
+    } else if ([action isEqualToString:@"setTempUnit"]) {
+        NSString *newUnit = body[@"unit"];
+        if (newUnit) {
+            self.tempUnit = newUnit;
+            [[NSUserDefaults standardUserDefaults] setObject:newUnit forKey:@"StatixTempUnit"];
+            [self updateStats];
+        }
+    } else if ([action isEqualToString:@"setLaunchAtLogin"]) {
+        BOOL enabled = [body[@"enabled"] boolValue];
+        [self setLaunchAtLogin:enabled];
     } else if ([action isEqualToString:@"setInterval"]) {
         NSNumber *intervalNum = body[@"interval"];
         if (intervalNum) {
@@ -227,6 +316,8 @@ static NSString *formatSpeed(double bytesPerSec) {
             [[NSUserDefaults standardUserDefaults] setDouble:self.updateInterval forKey:@"StatixUpdateInterval"];
             [self restartTimer];
         }
+    } else if ([action isEqualToString:@"getConfig"]) {
+        [self sendInitialConfigToWeb];
     } else if ([action isEqualToString:@"refresh"]) {
         [self updateStats];
     }
@@ -245,8 +336,11 @@ static NSString *formatSpeed(double bytesPerSec) {
     // Quick summary
     if (self.lastSnapshot) {
         double ramPercent = self.lastSnapshot.ramTotalBytes > 0 ? ((double)self.lastSnapshot.ramUsedBytes / self.lastSnapshot.ramTotalBytes) * 100.0 : 0.0;
-        NSString *summaryStr = [NSString stringWithFormat:@"⚡ CPU: %.1f%%  |  💾 RAM: %.1f%%  |  💿 Disk: %.1f%%",
-                                self.lastSnapshot.cpuTotalPercent, ramPercent, self.lastSnapshot.diskUsedPercent];
+        NSString *tempStr = self.lastSnapshot.hasTemperature ?
+            [NSString stringWithFormat:@"(%.0f°%@)", [self temperatureForDisplay:self.lastSnapshot.cpuTemperature], self.tempUnit] : @"";
+        
+        NSString *summaryStr = [NSString stringWithFormat:@"⚡ CPU: %.1f%% %@  |  💾 RAM: %.1f%%  |  💿 Disk: %.1f%%",
+                                self.lastSnapshot.cpuTotalPercent, tempStr, ramPercent, self.lastSnapshot.diskUsedPercent];
         NSMenuItem *sumItem = [[NSMenuItem alloc] initWithTitle:summaryStr action:nil keyEquivalent:@""];
         [sumItem setEnabled:NO];
         [menu addItem:sumItem];
@@ -267,6 +361,8 @@ static NSString *formatSpeed(double bytesPerSec) {
         @{@"id": @"icon", @"title": @"Sadece İkon"},
         @{@"id": @"cpu", @"title": @"İkon + CPU %"},
         @{@"id": @"cpu_ram", @"title": @"İkon + CPU & RAM %"},
+        @{@"id": @"temp", @"title": @"İkon + Sıcaklık"},
+        @{@"id": @"cpu_temp", @"title": @"İkon + CPU & Sıcaklık"},
         @{@"id": @"net", @"title": @"İkon + Ağ Hızı"}
     ];
     for (NSDictionary *m in modes) {
@@ -304,6 +400,12 @@ static NSString *formatSpeed(double bytesPerSec) {
     
     [menu addItem:[NSMenuItem separatorItem]];
     
+    // Launch at login toggle item
+    NSMenuItem *loginItem = [[NSMenuItem alloc] initWithTitle:@"Girişte Otomatik Başlat" action:@selector(toggleLaunchAtLoginMenuItem:) keyEquivalent:@""];
+    loginItem.target = self;
+    loginItem.state = self.launchAtLogin ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:loginItem];
+    
     // Activity Monitor
     NSMenuItem *amItem = [[NSMenuItem alloc] initWithTitle:@"Activity Monitor'ı Başlat" action:@selector(openActivityMonitor:) keyEquivalent:@"a"];
     amItem.target = self;
@@ -317,6 +419,10 @@ static NSString *formatSpeed(double bytesPerSec) {
     [menu addItem:quitItem];
     
     [self.statusItem popUpStatusItemMenu:menu];
+}
+
+- (void)toggleLaunchAtLoginMenuItem:(NSMenuItem *)sender {
+    [self setLaunchAtLogin:!self.launchAtLogin];
 }
 
 - (void)changeModeMenuItem:(NSMenuItem *)sender {

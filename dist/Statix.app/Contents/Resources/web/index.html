@@ -44,20 +44,42 @@
       </div>
     </header>
 
-    <!-- Quick Settings Drawer (hidden by default) -->
+    <!-- Quick Settings Drawer (expandable) -->
     <div class="settings-drawer" id="settingsDrawer">
-      <div class="settings-title">Hızlı Tercihler</div>
+      <div class="settings-title">Uygulama Tercihleri</div>
       
+      <!-- Launch at Login Toggle -->
+      <div class="setting-row">
+        <label for="toggleLaunchAtLogin">Girişte Otomatik Başlat:</label>
+        <label class="switch">
+          <input type="checkbox" id="toggleLaunchAtLogin" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <!-- Menu Bar Display Mode -->
       <div class="setting-row">
         <label>Menü Çubuğu Görünümü:</label>
         <select id="selectMode">
           <option value="cpu">İkon + CPU %</option>
+          <option value="cpu_temp">İkon + CPU & Sıcaklık</option>
+          <option value="temp">İkon + Sıcaklık</option>
           <option value="cpu_ram">İkon + CPU & RAM %</option>
           <option value="net">İkon + Ağ Hızı</option>
           <option value="icon">Sadece İkon</option>
         </select>
       </div>
 
+      <!-- Temperature Unit -->
+      <div class="setting-row">
+        <label>Sıcaklık Birimi:</label>
+        <div class="segmented-control" id="unitControl">
+          <button data-unit="C" class="active">°C</button>
+          <button data-unit="F">°F</button>
+        </div>
+      </div>
+
+      <!-- Refresh Interval -->
       <div class="setting-row">
         <label>Yenileme Sıklığı:</label>
         <div class="segmented-control" id="intervalControl">
@@ -78,7 +100,14 @@
             <span class="dot-accent cyan"></span>
             <span>İŞLEMCİ (CPU)</span>
           </div>
-          <div class="card-value-large cyan" id="cpuTotalPercent">0%</div>
+          <div class="cpu-header-right">
+            <!-- CPU Temperature Badge -->
+            <div class="temp-badge" id="cpuTempBadge" title="İşlemci Sıcaklığı">
+              <span class="temp-icon">🌡️</span>
+              <span id="cpuTempVal">--°C</span>
+            </div>
+            <div class="card-value-large cyan" id="cpuTotalPercent">0%</div>
+          </div>
         </div>
 
         <div class="progress-bar-wrap">

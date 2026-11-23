@@ -5,6 +5,7 @@
   // State
   let currentStats = null;
   let activeProcTab = 'cpu'; // 'cpu' or 'ram'
+  let currentUnit = 'C';
   const sparklineHistory = new Array(35).fill(0);
 
   // Helper formatters
@@ -24,6 +25,13 @@
     return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
   }
 
+  function convertTemp(celsius, unit) {
+    if (unit === 'F') {
+      return (celsius * 9.0 / 5.0) + 32.0;
+    }
+    return celsius;
+  }
+
   // DOM Elements
   const el = {
     sysChip: document.getElementById('sysChip'),
@@ -38,6 +46,8 @@
     cpuIdlePercent: document.getElementById('cpuIdlePercent'),
     cpuSparkline: document.getElementById('cpuSparkline'),
     coresContainer: document.getElementById('coresContainer'),
+    cpuTempBadge: document.getElementById('cpuTempBadge'),
+    cpuTempVal: document.getElementById('cpuTempVal'),
 
     // RAM
     ramPercentText: document.getElementById('ramPercentText'),
@@ -77,7 +87,9 @@
     // Settings
     btnSettings: document.getElementById('btnSettings'),
     settingsDrawer: document.getElementById('settingsDrawer'),
+    toggleLaunchAtLogin: document.getElementById('toggleLaunchAtLogin'),
     selectMode: document.getElementById('selectMode'),
+    unitControl: document.getElementById('unitControl'),
     intervalControl: document.getElementById('intervalControl'),
     btnActivityMonitor: document.getElementById('btnActivityMonitor'),
     btnQuit: document.getElementById('btnQuit')
@@ -155,10 +167,40 @@
     }
   }
 
+  // Initial config load from native
+  window.onConfigLoaded = function(cfg) {
+    if (!cfg) return;
+    if (cfg.launchAtLogin !== undefined && el.toggleLaunchAtLogin) {
+      el.toggleLaunchAtLogin.checked = !!cfg.launchAtLogin;
+    }
+    if (cfg.mode && el.selectMode) {
+      el.selectMode.value = cfg.mode;
+    }
+    if (cfg.unit) {
+      currentUnit = cfg.unit;
+      el.unitControl.querySelectorAll('button').forEach(b => {
+        b.classList.toggle('active', b.dataset.unit === cfg.unit);
+      });
+    }
+    if (cfg.interval && el.intervalControl) {
+      el.intervalControl.querySelectorAll('button').forEach(b => {
+        const diff = Math.abs(parseFloat(b.dataset.interval) - cfg.interval);
+        b.classList.toggle('active', diff < 0.2);
+      });
+    }
+  };
+
+  window.onLaunchAtLoginChanged = function(enabled) {
+    if (el.toggleLaunchAtLogin) {
+      el.toggleLaunchAtLogin.checked = !!enabled;
+    }
+  };
+
   // Main stats update handler called from Objective-C
-  window.onSystemStatsUpdate = function(stats) {
+  window.onSystemStatsUpdate = function(stats, unit) {
     if (!stats) return;
     currentStats = stats;
+    if (unit) currentUnit = unit;
 
     // 1. System Info
     if (stats.system) {
@@ -169,7 +211,7 @@
       el.uptimeText.textContent = stats.system.uptime || '0 saat';
     }
 
-    // 2. CPU
+    // 2. CPU & Temperature
     if (stats.cpu) {
       const total = stats.cpu.totalPercent || 0;
       el.cpuTotalPercent.textContent = total.toFixed(1) + '%';
@@ -187,6 +229,16 @@
       if (stats.cpu.coresPercent && Array.isArray(stats.cpu.coresPercent)) {
         renderCores(stats.cpu.coresPercent);
       }
+    }
+
+    // Temperature display
+    if (stats.temperature && stats.temperature.hasTemp) {
+      el.cpuTempBadge.style.display = 'flex';
+      const dispTemp = convertTemp(stats.temperature.cpuTemp, currentUnit);
+      el.cpuTempVal.textContent = `${dispTemp.toFixed(1)}°${currentUnit}`;
+      el.cpuTempBadge.title = `Ortalama: ${dispTemp.toFixed(1)}°${currentUnit} | Maks: ${convertTemp(stats.temperature.cpuTempMax, currentUnit).toFixed(1)}°${currentUnit}`;
+    } else {
+      el.cpuTempBadge.style.display = 'none';
     }
 
     // 3. RAM
@@ -267,7 +319,6 @@
   function renderCores(cores) {
     if (!el.coresContainer) return;
     
-    // Only rebuild DOM if core count changed
     if (el.coresContainer.children.length !== cores.length) {
       el.coresContainer.innerHTML = '';
       el.coresContainer.style.gridTemplateColumns = `repeat(${cores.length}, 1fr)`;
@@ -353,10 +404,27 @@
     el.settingsDrawer.classList.toggle('open');
   });
 
+  // Launch at login toggle
+  el.toggleLaunchAtLogin.addEventListener('change', (e) => {
+    sendNative('setLaunchAtLogin', { enabled: e.target.checked });
+  });
+
   el.selectMode.addEventListener('change', (e) => {
     sendNative('setMode', { mode: e.target.value });
   });
 
+  // Temperature unit selector
+  el.unitControl.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el.unitControl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const unit = btn.dataset.unit;
+      currentUnit = unit;
+      sendNative('setTempUnit', { unit: unit });
+    });
+  });
+
+  // Interval selector
   el.intervalControl.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
       el.intervalControl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
@@ -376,5 +444,8 @@
 
   // Initial Sparkline Render
   drawSparkline();
+
+  // Request initial config from host
+  sendNative('getConfig');
 
 })();

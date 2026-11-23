@@ -7,7 +7,59 @@
 #include <ifaddrs.h>
 #import <IOKit/ps/IOPowerSources.h>
 #import <IOKit/ps/IOPSKeys.h>
+#import <IOKit/IOKitLib.h>
 #include <libproc.h>
+
+// Apple HID Event System Client declarations
+typedef struct __IOHIDEvent *IOHIDEventRef;
+typedef struct __IOHIDServiceClient *IOHIDServiceClientRef;
+typedef struct __IOHIDEventSystemClient *IOHIDEventSystemClientRef;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
+int IOHIDEventSystemClientSetMatching(IOHIDEventSystemClientRef client, CFDictionaryRef match);
+CFArrayRef IOHIDEventSystemClientCopyServices(IOHIDEventSystemClientRef client);
+IOHIDEventRef IOHIDServiceClientCopyEvent(IOHIDServiceClientRef service, int64_t type, int32_t options, int64_t flags);
+double IOHIDEventGetFloatValue(IOHIDEventRef event, int32_t field);
+CFStringRef IOHIDServiceClientCopyProperty(IOHIDServiceClientRef service, CFStringRef property);
+#define IOHIDEventFieldBase(type) (type << 16)
+#define kIOHIDEventTypeTemperature 15
+#ifdef __cplusplus
+}
+#endif
+
+// Apple SMC Declarations for Intel Macs
+#define KERN_INDEX_SMC 2
+#define SMC_CMD_READ_BYTES 5
+#define SMC_CMD_READ_KEYINFO 9
+
+typedef struct {
+    uint32_t key;
+    uint32_t dataSize;
+    uint32_t dataType;
+    uint8_t  dataAttributes;
+} SMCKeyInfoData;
+
+typedef struct {
+    uint32_t key;
+    uint32_t vers;
+    uint32_t p8;
+    uint32_t p12;
+    uint8_t  p16;
+} SMCVersion;
+
+typedef struct {
+    uint32_t key;
+    SMCVersion vers;
+    SMCKeyInfoData pKeyInfo;
+    uint8_t result;
+    uint8_t status;
+    uint8_t data8;
+    uint32_t data32;
+    uint8_t bytes[32];
+} SMCParamStruct;
 
 @implementation ProcessStat
 @end
@@ -25,6 +77,12 @@
             @"brand": self.cpuBrand ?: @"Apple Processor",
             @"physicalCores": @(self.physicalCores),
             @"logicalCores": @(self.logicalCores)
+        },
+        @"temperature": @{
+            @"hasTemp": @(self.hasTemperature),
+            @"cpuTemp": @(round(self.cpuTemperature * 10.0) / 10.0),
+            @"cpuTempMax": @(round(self.cpuTemperatureMax * 10.0) / 10.0),
+            @"socTemp": @(round(self.socTemperature * 10.0) / 10.0)
         },
         @"ram": @{
             @"totalBytes": @(self.ramTotalBytes),
@@ -197,6 +255,7 @@
     snapshot.osVersion = _cachedOsVersion;
     
     [self pollCPU:snapshot];
+    [self pollTemperature:snapshot];
     [self pollRAM:snapshot];
     [self pollDisk:snapshot];
     [self pollNetwork:snapshot];
@@ -272,6 +331,163 @@
         _prevNumCPUs = numCPUs;
         _hasPrevCoreTicks = YES;
     }
+}
+
+#pragma mark - Temperature (Apple Silicon + Intel)
+
+static uint32_t stringToSMCKey(const char *str) {
+    uint32_t key = 0;
+    for (int i = 0; i < 4; i++) {
+        key = (key << 8) | (uint8_t)str[i];
+    }
+    return key;
+}
+
+- (BOOL)readIntelSMCTemps:(double *)outCpuAvg max:(double *)outCpuMax {
+    mach_port_t masterPort;
+    if (@available(macOS 12.0, *)) {
+        masterPort = kIOMainPortDefault;
+    } else {
+        masterPort = kIOMasterPortDefault;
+    }
+    io_service_t service = IOServiceGetMatchingService(masterPort, IOServiceMatching("AppleSMC"));
+    if (!service) return NO;
+    
+    io_connect_t conn = 0;
+    kern_return_t kr = IOServiceOpen(service, mach_task_self(), 0, &conn);
+    IOObjectRelease(service);
+    if (kr != kIOReturnSuccess || !conn) return NO;
+    
+    const char *keys[] = {"TC0P", "TC0D", "TC0E", "TC0F", "TCXC", "TC1C", "TC2C", "TC3C", "TC4C"};
+    int numKeys = sizeof(keys) / sizeof(keys[0]);
+    double sum = 0;
+    int count = 0;
+    double maxVal = 0;
+    
+    for (int i = 0; i < numKeys; i++) {
+        SMCParamStruct input;
+        SMCParamStruct output;
+        memset(&input, 0, sizeof(input));
+        memset(&output, 0, sizeof(output));
+        
+        input.key = stringToSMCKey(keys[i]);
+        input.data8 = SMC_CMD_READ_KEYINFO;
+        size_t outSize = sizeof(output);
+        
+        if (IOConnectCallStructMethod(conn, KERN_INDEX_SMC, &input, sizeof(input), &output, &outSize) == kIOReturnSuccess) {
+            input.pKeyInfo = output.pKeyInfo;
+            input.data8 = SMC_CMD_READ_BYTES;
+            outSize = sizeof(output);
+            
+            if (IOConnectCallStructMethod(conn, KERN_INDEX_SMC, &input, sizeof(input), &output, &outSize) == kIOReturnSuccess) {
+                // Parse sp78 format: 1 signed bit, 7 integer bits, 8 fraction bits
+                double temp = (double)((int16_t)((output.bytes[0] << 8) | output.bytes[1])) / 256.0;
+                if (temp > 10.0 && temp < 125.0) {
+                    sum += temp;
+                    count++;
+                    if (temp > maxVal) maxVal = temp;
+                }
+            }
+        }
+    }
+    IOServiceClose(conn);
+    
+    if (count > 0) {
+        if (outCpuAvg) *outCpuAvg = sum / count;
+        if (outCpuMax) *outCpuMax = maxVal;
+        return YES;
+    }
+    return NO;
+}
+
+- (BOOL)readAppleSiliconTemps:(double *)outCpuAvg max:(double *)outCpuMax soc:(double *)outSoc {
+    IOHIDEventSystemClientRef client = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
+    if (!client) return NO;
+    
+    NSDictionary *match = @{
+        @"PrimaryUsagePage": @(0xff00),
+        @"PrimaryUsage": @(5)
+    };
+    IOHIDEventSystemClientSetMatching(client, (__bridge CFDictionaryRef)match);
+    CFArrayRef services = IOHIDEventSystemClientCopyServices(client);
+    if (!services) {
+        CFRelease(client);
+        return NO;
+    }
+    
+    CFIndex count = CFArrayGetCount(services);
+    double cpuSum = 0;
+    int cpuCount = 0;
+    double maxTemp = 0;
+    double socTemp = 0;
+    
+    for (CFIndex i = 0; i < count; i++) {
+        IOHIDServiceClientRef service = (IOHIDServiceClientRef)CFArrayGetValueAtIndex(services, i);
+        CFStringRef productRef = IOHIDServiceClientCopyProperty(service, CFSTR("Product"));
+        if (!productRef) continue;
+        NSString *product = (__bridge NSString *)productRef;
+        
+        IOHIDEventRef event = IOHIDServiceClientCopyEvent(service, kIOHIDEventTypeTemperature, 0, 0);
+        if (event) {
+            double temp = IOHIDEventGetFloatValue(event, IOHIDEventFieldBase(kIOHIDEventTypeTemperature));
+            if (temp > 5.0 && temp < 125.0) {
+                if ([product containsString:@"pACC"] || [product containsString:@"eACC"] || [product containsString:@"CPU"]) {
+                    cpuSum += temp;
+                    cpuCount++;
+                    if (temp > maxTemp) maxTemp = temp;
+                } else if ([product containsString:@"SOC"] || [product containsString:@"PMGR SOC"]) {
+                    if (socTemp == 0) socTemp = temp;
+                }
+            }
+            CFRelease(event);
+        }
+        CFRelease(productRef);
+    }
+    CFRelease(services);
+    CFRelease(client);
+    
+    if (cpuCount > 0) {
+        if (outCpuAvg) *outCpuAvg = cpuSum / cpuCount;
+        if (outCpuMax) *outCpuMax = maxTemp;
+        if (outSoc) *outSoc = socTemp > 0 ? socTemp : (cpuSum / cpuCount);
+        return YES;
+    }
+    if (socTemp > 0) {
+        if (outCpuAvg) *outCpuAvg = socTemp;
+        if (outCpuMax) *outCpuMax = socTemp;
+        if (outSoc) *outSoc = socTemp;
+        return YES;
+    }
+    return NO;
+}
+
+- (void)pollTemperature:(SystemSnapshot *)snapshot {
+    if (!snapshot) return;
+    
+    double cpuAvg = 0.0, cpuMax = 0.0, soc = 0.0;
+    
+    // 1. Try Apple Silicon HID Temperature Sensors
+    if ([self readAppleSiliconTemps:&cpuAvg max:&cpuMax soc:&soc]) {
+        snapshot.hasTemperature = YES;
+        snapshot.cpuTemperature = cpuAvg;
+        snapshot.cpuTemperatureMax = cpuMax;
+        snapshot.socTemperature = soc;
+        return;
+    }
+    
+    // 2. Try Intel AppleSMC
+    if ([self readIntelSMCTemps:&cpuAvg max:&cpuMax]) {
+        snapshot.hasTemperature = YES;
+        snapshot.cpuTemperature = cpuAvg;
+        snapshot.cpuTemperatureMax = cpuMax;
+        snapshot.socTemperature = cpuAvg;
+        return;
+    }
+    
+    snapshot.hasTemperature = NO;
+    snapshot.cpuTemperature = 0.0;
+    snapshot.cpuTemperatureMax = 0.0;
+    snapshot.socTemperature = 0.0;
 }
 
 #pragma mark - RAM
@@ -460,10 +676,9 @@
         if (prevTimeNum) {
             uint64_t prevTime = [prevTimeNum unsignedLongLongValue];
             if (cpuTime >= prevTime) {
-                // nanoseconds to seconds
                 double deltaSec = (double)(cpuTime - prevTime) / 1000000000.0;
                 cpuPercent = (deltaSec / dt) * 100.0;
-                if (cpuPercent > 1000.0) cpuPercent = 100.0; // clamp anomalies
+                if (cpuPercent > 1000.0) cpuPercent = 100.0;
             }
         }
         

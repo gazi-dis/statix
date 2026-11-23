@@ -18,6 +18,12 @@
 @property (nonatomic, assign) int physicalCores;
 @property (nonatomic, assign) int logicalCores;
 
+// Temperature
+@property (nonatomic, assign) BOOL hasTemperature;
+@property (nonatomic, assign) double cpuTemperature;     // Celsius
+@property (nonatomic, assign) double cpuTemperatureMax;  // Celsius
+@property (nonatomic, assign) double socTemperature;     // Celsius
+
 // RAM
 @property (nonatomic, assign) uint64_t ramTotalBytes;
 @property (nonatomic, assign) uint64_t ramUsedBytes;

@@ -34,9 +34,9 @@ if [ ! -f "assets/AppIcon.icns" ] || [ ! -f "assets/menubar_icon.png" ]; then
     python3 tools/pack_icns.py assets assets/AppIcon.icns
 fi
 
-# 3. Source files
+# 3. Source files & frameworks
 SOURCES="src/main.m src/AppDelegate.m src/SystemMonitor.m"
-FRAMEWORKS="-framework Cocoa -framework WebKit -framework IOKit -lproc"
+FRAMEWORKS="-framework Cocoa -framework WebKit -framework IOKit -framework ServiceManagement -lproc"
 MIN_MACOS="11.0"
 CFLAGS="-O3 -fobjc-arc -Wall -Wno-deprecated-declarations -mmacosx-version-min=$MIN_MACOS"
 
@@ -81,8 +81,18 @@ rm -f "$APP_NAME-Universal.zip"
 zip -r -q "$APP_NAME-Universal.zip" "$APP_NAME.app"
 cd "$SCRIPT_DIR"
 
+# 11. Create DMG Package if hdiutil is accessible
+echo "==> Creating DMG installer package..."
+if [ -f "tools/create_dmg.sh" ]; then
+    chmod +x tools/create_dmg.sh
+    ./tools/create_dmg.sh || echo "[Note] DMG creation requires bypass sandbox or standard terminal execution."
+fi
+
 echo "=========================================="
 echo " BUILD SUCCESSFUL!"
 echo " App Bundle: $DIST_DIR/$APP_NAME.app"
 echo " Zip Archive: $DIST_DIR/$APP_NAME-Universal.zip"
+if [ -f "$DIST_DIR/$APP_NAME-Universal.dmg" ]; then
+    echo " DMG Installer: $DIST_DIR/$APP_NAME-Universal.dmg"
+fi
 echo "=========================================="
