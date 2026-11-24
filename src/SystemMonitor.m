@@ -845,11 +845,11 @@ static uint32_t stringToSMCKey(const char *str) {
         long mins = (uptime % 3600) / 60;
         
         if (days > 0) {
-            snapshot.uptimeString = [NSString stringWithFormat:@"%ld gün, %ld sa, %ld dk", days, hours, mins];
+            snapshot.uptimeString = [NSString stringWithFormat:@"%ldd, %ldh, %ldm", days, hours, mins];
         } else if (hours > 0) {
-            snapshot.uptimeString = [NSString stringWithFormat:@"%ld saat, %ld dk", hours, mins];
+            snapshot.uptimeString = [NSString stringWithFormat:@"%ldh, %ldm", hours, mins];
         } else {
-            snapshot.uptimeString = [NSString stringWithFormat:@"%ld dk", mins];
+            snapshot.uptimeString = [NSString stringWithFormat:@"%ldm", mins];
         }
     }
 }

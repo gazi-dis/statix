@@ -26,6 +26,7 @@ static NSString *formatSpeed(double bytesPerSec) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     self.displayMode = [defaults stringForKey:@"StatixDisplayMode"] ?: @"cpu";
     self.tempUnit = [defaults stringForKey:@"StatixTempUnit"] ?: @"C";
+    self.language = [defaults stringForKey:@"StatixLanguage"] ?: @"en";
     
     double savedInterval = [defaults doubleForKey:@"StatixUpdateInterval"];
     self.updateInterval = savedInterval > 0.4 ? savedInterval : 1.5;
@@ -208,11 +209,12 @@ static NSString *formatSpeed(double bytesPerSec) {
 
 - (void)sendInitialConfigToWeb {
     NSString *js = [NSString stringWithFormat:
-        @"if (window.onConfigLoaded) { window.onConfigLoaded({ launchAtLogin: %@, mode: '%@', unit: '%@', interval: %f }); }",
+        @"if (window.onConfigLoaded) { window.onConfigLoaded({ launchAtLogin: %@, mode: '%@', unit: '%@', interval: %f, language: '%@' }); }",
         self.launchAtLogin ? @"true" : @"false",
         self.displayMode,
         self.tempUnit,
-        self.updateInterval
+        self.updateInterval,
+        self.language ?: @"en"
     ];
     [self.webView evaluateJavaScript:js completionHandler:nil];
 }
@@ -329,6 +331,13 @@ static NSString *formatSpeed(double bytesPerSec) {
             [[NSUserDefaults standardUserDefaults] setObject:newUnit forKey:@"StatixTempUnit"];
             [self updateStats];
         }
+    } else if ([action isEqualToString:@"setLanguage"]) {
+        NSString *newLang = body[@"language"];
+        if (newLang) {
+            self.language = newLang;
+            [[NSUserDefaults standardUserDefaults] setObject:newLang forKey:@"StatixLanguage"];
+            [self updateStats];
+        }
     } else if ([action isEqualToString:@"setLaunchAtLogin"]) {
         BOOL enabled = [body[@"enabled"] boolValue];
         [self setLaunchAtLogin:enabled];
@@ -371,11 +380,42 @@ static NSString *formatSpeed(double bytesPerSec) {
 
 #pragma mark - Right Click Context Menu
 
+static NSString *localizedMenu(NSString *key, NSString *lang) {
+    if (!lang) lang = @"en";
+    static NSDictionary *strings = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        strings = @{
+            @"title": @{@"en": @"Statix — System Monitor", @"tr": @"Statix — Sistem Kaynak Takibi", @"de": @"Statix — Systemmonitor", @"es": @"Statix — Monitor del Sistema", @"fr": @"Statix — Moniteur Système"},
+            @"dash": @{@"en": @"Open Dashboard", @"tr": @"Dashboard'ı Aç", @"de": @"Dashboard öffnen", @"es": @"Abrir Panel", @"fr": @"Ouvrir le tableau de bord"},
+            @"ports": @{@"en": @"Open Port Manager", @"tr": @"Port Yöneticisi'ni Aç", @"de": @"Port-Manager öffnen", @"es": @"Abrir Gestor de Puertos", @"fr": @"Ouvrir le gestionnaire de ports"},
+            @"about": @{@"en": @"About Statix", @"tr": @"Statix Hakkında", @"de": @"Über Statix", @"es": @"Acerca de Statix", @"fr": @"À propos de Statix"},
+            @"view": @{@"en": @"Menu Bar Display", @"tr": @"Üst Bar Görünümü", @"de": @"Menüleisten-Anzeige", @"es": @"Barra de menú", @"fr": @"Barre des menus"},
+            @"mode_icon": @{@"en": @"Icon Only", @"tr": @"Sadece İkon", @"de": @"Nur Symbol", @"es": @"Solo icono", @"fr": @"Icône seule"},
+            @"mode_cpu": @{@"en": @"Icon + CPU %", @"tr": @"İkon + CPU %", @"de": @"Symbol + CPU %", @"es": @"Icono + CPU %", @"fr": @"Icône + CPU %"},
+            @"mode_cpu_ram": @{@"en": @"Icon + CPU & RAM %", @"tr": @"İkon + CPU & RAM %", @"de": @"Symbol + CPU & RAM %", @"es": @"Icono + CPU & RAM %", @"fr": @"Icône + CPU & RAM %"},
+            @"mode_temp": @{@"en": @"Icon + Temp", @"tr": @"İkon + Sıcaklık", @"de": @"Symbol + Temp", @"es": @"Icono + Temp", @"fr": @"Icône + Temp"},
+            @"mode_cpu_temp": @{@"en": @"Icon + CPU & Temp", @"tr": @"İkon + CPU & Sıcaklık", @"de": @"Symbol + CPU & Temp", @"es": @"Icono + CPU & Temp", @"fr": @"Icône + CPU & Temp"},
+            @"mode_net": @{@"en": @"Icon + Net Speed", @"tr": @"İkon + Ağ Hızı", @"de": @"Symbol + Netztempo", @"es": @"Icono + Vel. Red", @"fr": @"Icône + Vitesse réseau"},
+            @"interval": @{@"en": @"Refresh Interval", @"tr": @"Yenileme Hızı", @"de": @"Aktualisierungsintervall", @"es": @"Intervalo de refresco", @"fr": @"Intervalle de rafraîchissement"},
+            @"int_1": @{@"en": @"1 Second (Fast)", @"tr": @"1 Saniye (Hızlı)", @"de": @"1 Sekunde (Schnell)", @"es": @"1 Segundo (Rápido)", @"fr": @"1 Seconde (Rapide)"},
+            @"int_15": @{@"en": @"1.5 Seconds (Normal)", @"tr": @"1.5 Saniye (Standart)", @"de": @"1.5 Sekunden (Normal)", @"es": @"1.5 Segundos (Normal)", @"fr": @"1.5 Seconde (Normal)"},
+            @"int_3": @{@"en": @"3 Seconds (Eco)", @"tr": @"3 Saniye (Eko Mod)", @"de": @"3 Sekunden (Öko)", @"es": @"3 Segundos (Eco)", @"fr": @"3 Secondes (Éco)"},
+            @"login": @{@"en": @"Launch at Login", @"tr": @"Girişte Otomatik Başlat", @"de": @"Beim Login starten", @"es": @"Iniciar al arrancar", @"fr": @"Lancer au démarrage"},
+            @"am": @{@"en": @"Launch Activity Monitor", @"tr": @"Activity Monitor'ı Başlat", @"de": @"Aktivitätsanzeige öffnen", @"es": @"Abrir Monitor de Actividad", @"fr": @"Lancer le moniteur d'activité"},
+            @"quit": @{@"en": @"Quit Statix", @"tr": @"Statix'ten Çık", @"de": @"Statix beenden", @"es": @"Salir de Statix", @"fr": @"Quitter Statix"}
+        };
+    });
+    NSDictionary *entry = strings[key];
+    return entry[lang] ?: (entry[@"en"] ?: key);
+}
+
 - (void)showContextMenu {
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Statix"];
+    NSString *lang = self.language ?: @"en";
     
     // Title / Header
-    NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:@"Statix — Sistem Kaynak Takibi" action:nil keyEquivalent:@""];
+    NSMenuItem *titleItem = [[NSMenuItem alloc] initWithTitle:localizedMenu(@"title", lang) action:nil keyEquivalent:@""];
     [titleItem setEnabled:NO];
     [menu addItem:titleItem];
     
@@ -395,36 +435,37 @@ static NSString *formatSpeed(double bytesPerSec) {
     [menu addItem:[NSMenuItem separatorItem]];
     
     // Open Dashboard
-    NSMenuItem *dashItem = [[NSMenuItem alloc] initWithTitle:@"Dashboard'ı Aç" action:@selector(openDashboardMenuItem:) keyEquivalent:@"d"];
+    NSMenuItem *dashItem = [[NSMenuItem alloc] initWithTitle:localizedMenu(@"dash", lang) action:@selector(openDashboardMenuItem:) keyEquivalent:@"d"];
     dashItem.target = self;
     [menu addItem:dashItem];
     
     // Open Ports Manager
-    NSMenuItem *portsItem = [[NSMenuItem alloc] initWithTitle:@"Port Yöneticisi'ni Aç" action:@selector(openPortsMenuItem:) keyEquivalent:@"p"];
+    NSMenuItem *portsItem = [[NSMenuItem alloc] initWithTitle:localizedMenu(@"ports", lang) action:@selector(openPortsMenuItem:) keyEquivalent:@"p"];
     portsItem.target = self;
     [menu addItem:portsItem];
     
     // Open About
-    NSMenuItem *aboutItem = [[NSMenuItem alloc] initWithTitle:@"Statix Hakkında" action:@selector(openAboutMenuItem:) keyEquivalent:@"i"];
+    NSMenuItem *aboutItem = [[NSMenuItem alloc] initWithTitle:localizedMenu(@"about", lang) action:@selector(openAboutMenuItem:) keyEquivalent:@"i"];
     aboutItem.target = self;
     [menu addItem:aboutItem];
     
     [menu addItem:[NSMenuItem separatorItem]];
     
     // Menu Bar Display Mode Submenu
-    NSMenuItem *modeParent = [[NSMenuItem alloc] initWithTitle:@"Üst Bar Görünümü" action:nil keyEquivalent:@""];
-    NSMenu *modeSubmenu = [[NSMenu alloc] initWithTitle:@"Görünüm"];
+    NSMenuItem *modeParent = [[NSMenuItem alloc] initWithTitle:localizedMenu(@"view", lang) action:nil keyEquivalent:@""];
+    NSMenu *modeSubmenu = [[NSMenu alloc] initWithTitle:localizedMenu(@"view", lang)];
     
     NSArray *modes = @[
-        @{@"id": @"icon", @"title": @"Sadece İkon"},
-        @{@"id": @"cpu", @"title": @"İkon + CPU %"},
-        @{@"id": @"cpu_ram", @"title": @"İkon + CPU & RAM %"},
-        @{@"id": @"temp", @"title": @"İkon + Sıcaklık"},
-        @{@"id": @"cpu_temp", @"title": @"İkon + CPU & Sıcaklık"},
-        @{@"id": @"net", @"title": @"İkon + Ağ Hızı"}
+        @{@"id": @"icon", @"key": @"mode_icon"},
+        @{@"id": @"cpu", @"key": @"mode_cpu"},
+        @{@"id": @"cpu_ram", @"key": @"mode_cpu_ram"},
+        @{@"id": @"temp", @"key": @"mode_temp"},
+        @{@"id": @"cpu_temp", @"key": @"mode_cpu_temp"},
+        @{@"id": @"net", @"key": @"mode_net"}
     ];
     for (NSDictionary *m in modes) {
-        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:m[@"title"] action:@selector(changeModeMenuItem:) keyEquivalent:@""];
+        NSString *title = localizedMenu(m[@"key"], lang);
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:@selector(changeModeMenuItem:) keyEquivalent:@""];
         item.target = self;
         item.representedObject = m[@"id"];
         if ([self.displayMode isEqualToString:m[@"id"]]) {
@@ -436,16 +477,17 @@ static NSString *formatSpeed(double bytesPerSec) {
     [menu addItem:modeParent];
     
     // Refresh Interval Submenu
-    NSMenuItem *intervalParent = [[NSMenuItem alloc] initWithTitle:@"Yenileme Hızı" action:nil keyEquivalent:@""];
-    NSMenu *intervalSubmenu = [[NSMenu alloc] initWithTitle:@"Hız"];
+    NSMenuItem *intervalParent = [[NSMenuItem alloc] initWithTitle:localizedMenu(@"interval", lang) action:nil keyEquivalent:@""];
+    NSMenu *intervalSubmenu = [[NSMenu alloc] initWithTitle:localizedMenu(@"interval", lang)];
     
     NSArray *intervals = @[
-        @{@"val": @(1.0), @"title": @"1 Saniye (Hızlı)"},
-        @{@"val": @(2.0), @"title": @"2 Saniye (Standart)"},
-        @{@"val": @(5.0), @"title": @"5 Saniye (Eko Mod)"}
+        @{@"val": @(1.0), @"key": @"int_1"},
+        @{@"val": @(1.5), @"key": @"int_15"},
+        @{@"val": @(3.0), @"key": @"int_3"}
     ];
     for (NSDictionary *i in intervals) {
-        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:i[@"title"] action:@selector(changeIntervalMenuItem:) keyEquivalent:@""];
+        NSString *title = localizedMenu(i[@"key"], lang);
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:@selector(changeIntervalMenuItem:) keyEquivalent:@""];
         item.target = self;
         item.representedObject = i[@"val"];
         if (fabs(self.updateInterval - [i[@"val"] doubleValue]) < 0.2) {
@@ -459,20 +501,20 @@ static NSString *formatSpeed(double bytesPerSec) {
     [menu addItem:[NSMenuItem separatorItem]];
     
     // Launch at login toggle item
-    NSMenuItem *loginItem = [[NSMenuItem alloc] initWithTitle:@"Girişte Otomatik Başlat" action:@selector(toggleLaunchAtLoginMenuItem:) keyEquivalent:@""];
+    NSMenuItem *loginItem = [[NSMenuItem alloc] initWithTitle:localizedMenu(@"login", lang) action:@selector(toggleLaunchAtLoginMenuItem:) keyEquivalent:@""];
     loginItem.target = self;
     loginItem.state = self.launchAtLogin ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:loginItem];
     
     // Activity Monitor
-    NSMenuItem *amItem = [[NSMenuItem alloc] initWithTitle:@"Activity Monitor'ı Başlat" action:@selector(openActivityMonitor:) keyEquivalent:@"a"];
+    NSMenuItem *amItem = [[NSMenuItem alloc] initWithTitle:localizedMenu(@"am", lang) action:@selector(openActivityMonitor:) keyEquivalent:@"a"];
     amItem.target = self;
     [menu addItem:amItem];
     
     [menu addItem:[NSMenuItem separatorItem]];
     
     // Quit
-    NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Statix'ten Çık" action:@selector(quitApp:) keyEquivalent:@"q"];
+    NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:localizedMenu(@"quit", lang) action:@selector(quitApp:) keyEquivalent:@"q"];
     quitItem.target = self;
     [menu addItem:quitItem];
     
