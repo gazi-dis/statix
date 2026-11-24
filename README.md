@@ -115,12 +115,33 @@ Your chosen language is automatically persisted to macOS preferences (`NSUserDef
 ### Method 1: DMG Installer (Recommended)
 1. Download the latest release: [**Statix-Universal.dmg**](dist/Statix-Universal.dmg)
 2. Open the DMG file and drag **Statix.app** into your **Applications** folder.
-3. Launch **Statix** from Spotlight or Applications.
+3. Launch **Statix** from Spotlight or your Applications folder.
 
-> **Note on First Launch:** If macOS displays a Gatekeeper prompt for ad-hoc signed apps, right-click `Statix.app` in Finder and select **Open**, or run:
-> ```bash
-> xattr -cr /Applications/Statix.app
-> ```
+---
+
+### ⚠️ macOS Gatekeeper / First Launch Notice
+
+Because **Statix** is a free, independent open-source project without a paid commercial Apple Developer ID ($99/year), macOS Gatekeeper displays a standard security verification warning when opening files downloaded from GitHub:
+
+> *"Apple cannot verify that Statix.app is free of malware..."* / *"Apple, “Statix.app” öğesinin Mac’inize zarar verebilecek bir kötü amaçlı yazılım içermediğini doğrulayamadı."*
+
+This is completely normal for open-source Mac software. You can easily approve it in **one of two quick ways**:
+
+#### 🟢 Option A: Right-Click to Open (No Terminal Required • Recommended)
+1. In **Finder**, open your **Applications** folder.
+2. **Right-click** (or hold <kbd>Control</kbd> and click) on **Statix.app**.
+3. Select **Open** from the context menu.
+4. An alert will appear, but this time it includes an **Open** button. Click **Open**.
+5. *macOS remembers your permission permanently — future launches will open instantly.*
+
+*(Alternatively, go to **System Settings  > Privacy & Security**, scroll down to the Security section, and click **"Open Anyway"**).*
+
+#### 💻 Option B: Terminal Command (One-Liner)
+Remove the internet download quarantine attribute attached by macOS:
+```bash
+xattr -cr /Applications/Statix.app
+```
+Then double-click **Statix** to launch normally.
 
 ---
 
